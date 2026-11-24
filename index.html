@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Luqmân Campus — démo</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20width%3D%22100%22%20height%3D%22100%22%20rx%3D%2222%22%20fill%3D%22%230A2E2A%22/%3E%3Cpath%20d%3D%22M72%2030%20A28%2028%200%201%200%2072%2070%22%20fill%3D%22none%22%20stroke%3D%22%23D4A017%22%20stroke-width%3D%228%22%20stroke-linecap%3D%22round%22/%3E%3Cpath%20d%3D%22M42%2032%20V64%20H62%22%20fill%3D%22none%22%20stroke%3D%22%23E6FAF8%22%20stroke-width%3D%228%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22/%3E%3Cpolygon%20points%3D%2274%2C16%2080%2C16%2080%2C22%2074%2C22%22%20fill%3D%22%23D4A017%22/%3E%3Cpolygon%20points%3D%2277%2C14.5%2081.5%2C19%2077%2C23.5%2072.5%2C19%22%20fill%3D%22%23D4A017%22/%3E%3C/svg%3E">
+<meta name="theme-color" content="#0A2E2A">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
+<style>
+/* VOICE: calme, net, scolaire — un outil de travail quotidien
+   IDEA: le registre de classe du collège, relié et doré
+   PICTURE: l'outil lui-même (appel, grilles, conseil) occupe l'écran
+   COLOUR+TYPE: vert profond #0A2E2A, or #D4A017, sarcelle #0D9488, sable ; Playfair Display + DM Sans
+   LAYOUT: barre verte, onglets, une colonne de travail jusqu'à 1240px */
+:root{color-scheme:light dark;
+--bg:light-dark(#F5F3EF,#0b1615);--card:light-dark(#fff,#132422);--ink:light-dark(#0F172A,#E6FAF8);--mute:light-dark(#586578,#9fb3b0);
+--line:light-dark(#D6D0C4,#24403c);--green:#0A2E2A;--teal:light-dark(#0D9488,#2dd4bf);--tealbg:light-dark(#CCFBF1,#0f3b36);
+--gold:#D4A017;--goldd:light-dark(#92400E,#f5c84c);--goldbg:light-dark(#FEF3C7,#3a2f0b);--red:light-dark(#b91c1c,#f87171);--redbg:light-dark(#fde8e8,#3b1515)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 'DM Sans',system-ui,sans-serif;overflow-x:clip}
+h1,h2{font-family:'Playfair Display',Georgia,serif;line-height:1.1;margin:0;text-wrap:balance}
+h2{font-size:clamp(24px,3vw,32px)}
+button,select,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid var(--line);background:var(--card);border-radius:12px;padding:10px 16px;min-height:44px;font-weight:600}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.primary{background:linear-gradient(135deg,#D4A017,#B8860B);color:#0F172A;border:0}
+.teal{background:var(--teal);color:#fff;border:0}
+select,input,textarea{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-height:44px;font-size:16px}
+header{background:var(--green);color:#E6FAF8;padding:12px max(4vw,16px);display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:12px;margin-right:auto}
+.brand b{font-family:'Playfair Display',serif;font-size:24px;font-weight:800}
+.brand small{display:block;color:var(--gold);letter-spacing:.3em;font-size:11px;font-weight:700}
+header select{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.2);color:#fff}
+header select option{color:#0F172A}
+nav{background:var(--green);padding:0 max(4vw,16px);display:flex;gap:4px;overflow-x:auto;border-top:1px solid rgba(255,255,255,.08)}
+nav a{flex:none;color:rgba(230,250,248,.75);text-decoration:none;padding:12px 14px;font-weight:600;font-size:15px;white-space:nowrap;border-bottom:3px solid transparent}
+nav a[aria-current=page]{color:#fff;border-color:var(--gold)}
+main{max-width:1240px;margin:0 auto;padding:clamp(20px,3vw,40px) max(4vw,16px)}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.sp{justify-content:space-between}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px}
+.grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))}
+.kpi b{display:block;font-family:'Playfair Display',serif;font-size:clamp(28px,4vw,40px);line-height:1}
+.kpi span{color:var(--mute);font-size:14px}
+.mute{color:var(--mute)}.small{font-size:14px}
+.pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 10px;font-size:13px;font-weight:600;background:var(--tealbg);color:var(--teal);white-space:nowrap}
+.pill.g{background:var(--goldbg);color:var(--goldd)}.pill.r{background:var(--redbg);color:var(--red)}
+.banner{border-radius:12px;padding:12px 16px;background:var(--goldbg);color:var(--goldd);font-weight:600;margin-bottom:16px}
+.list{display:grid;gap:8px;margin-top:16px}
+.stu{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:12px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 12px}
+.av{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font-weight:700;background:var(--tealbg);color:var(--teal)}
+.stu.absent{border-color:var(--red);background:var(--redbg)}.stu.retard{border-color:var(--gold);background:var(--goldbg)}.stu.sortie{border-color:var(--teal)}
+.stu .act{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.stu .act button{padding:8px 12px;font-size:14px}
+.obs{font-size:13px;color:var(--mute);margin-top:2px}
+.scroll{overflow-x:auto}
+.tsticky{overflow:auto;max-height:calc(100vh - 170px);-webkit-overflow-scrolling:touch}
+.tsticky{padding:0!important}
+.tsticky table{border-collapse:separate;border-spacing:0}
+.tsticky td,.tsticky th{padding:8px 10px;border-bottom:1px solid var(--line);background:var(--card)}
+.tsticky td:first-child,.tsticky th:first-child{min-width:120px;max-width:140px;white-space:normal;border-right:1px solid var(--line)}
+.tsticky thead th{position:sticky;top:0;z-index:3;background:var(--card);box-shadow:0 1px 0 var(--line)}
+.tsticky tbody td:first-child,.tsticky thead th:first-child{position:sticky;left:0;background:var(--card);z-index:2}
+.tsticky thead th:first-child{z-index:4}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{font-weight:600;color:var(--mute);font-size:13px}
+td.n,th.n{text-align:right}
+td input{width:64px;min-height:36px;padding:6px 8px;text-align:right}
+.lo{color:var(--red);font-weight:700}.mid{color:var(--goldd);font-weight:700}.hi{color:var(--teal);font-weight:700}
+textarea{width:100%;min-height:72px;resize:none;overflow:hidden}
+.appr{display:grid;grid-template-columns:minmax(0,220px) minmax(0,1fr);gap:16px;padding:14px 0;border-bottom:1px solid var(--line)}
+.dialog{position:fixed;inset:0;background:rgba(10,46,42,.55);display:grid;place-items:center;padding:16px;z-index:20}
+.dialog .card{width:min(460px,100%)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.chips button.on{background:var(--teal);color:#fff;border-color:var(--teal)}
+.bars{display:grid;gap:8px}
+.bar{display:grid;grid-template-columns:72px minmax(0,1fr) 28px;gap:10px;align-items:center;font-size:14px}
+.bar i{display:block;height:18px;border-radius:6px;background:var(--teal)}
+/* Conseil projeté */
+.proj{position:fixed;inset:0;z-index:30;background:linear-gradient(160deg,#0A2E2A,#0D4A44,#0F5E56);color:#E6FAF8;display:flex;flex-direction:column}
+.proj header{background:transparent}
+.proj .stage{flex:1;overflow:hidden;padding:0 max(4vw,24px) 24px;position:relative}
+.proj .inner{will-change:transform}
+.proj h1{font-size:clamp(32px,4vw,52px)}
+.proj table{font-size:clamp(15px,1.4vw,20px)}
+.proj th{color:rgba(230,250,248,.6)}.proj td,.proj th{border-color:rgba(255,255,255,.12);white-space:normal}
+.proj .big{font-family:'Playfair Display',serif;font-size:clamp(40px,6vw,80px);color:#E0B020;line-height:1}
+.proj .avis{display:inline-block;margin-top:8px;padding:8px 18px;border-radius:12px;background:rgba(212,160,23,.18);color:#f5d36a;font-weight:700;font-size:clamp(18px,2vw,26px)}
+.proj .ctrl{display:flex;gap:8px;flex-wrap:wrap;padding:12px max(4vw,24px);background:rgba(0,0,0,.25)}
+.proj .ctrl button{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.2);color:#fff}
+.bulletin{background:#fff;color:#0F172A;max-width:820px;margin:0 auto;padding:40px;border:1px solid #D6D0C4;border-radius:8px}
+.bulletin h1{color:#0A2E2A;font-size:28px}
+.bulletin th,.bulletin td{white-space:normal;border-color:#D6D0C4}
+.note{font-size:13px;color:var(--mute);margin-top:24px}
+@media(max-width:600px){.appr{grid-template-columns:1fr}.stu{grid-template-columns:44px minmax(0,1fr)}.stu .act{grid-column:1/-1;justify-content:flex-start}.bulletin{padding:20px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <svg viewBox="0 0 100 100" width="40" height="40" aria-hidden="true"><path d="M72 30 A28 28 0 1 0 72 70" fill="none" stroke="#D4A017" stroke-width="8" stroke-linecap="round"/><path d="M42 32 V64 H62" fill="none" stroke="#E6FAF8" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/><polygon points="74,16 80,16 80,22 74,22" fill="#D4A017"/><polygon points="77,14.5 81.5,19 77,23.5 72.5,19" fill="#D4A017"/></svg>
+    <div><b>Luqmân</b><small>CAMPUS</small></div>
+  </div>
+  <label class="small" for="role" style="color:rgba(230,250,248,.7)">Je suis</label>
+  <select id="role">
+    <option value="prof">Professeur (M. Benali, maths)</option>
+    <option value="pp">Professeur principal 4A</option>
+    <option value="vs">Vie scolaire</option>
+    <option value="dir">Direction</option>
+  </select>
+</header>
+<nav id="nav" aria-label="Sections"></nav>
+<main id="app"></main>
+<div id="layer"></div>
+<script>
+{
+// ---------- Données fictives ----------
+let seed=7;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+const PRENOMS=['Adam','Inès','Yanis','Lina','Ilyes','Sarah','Rayan','Maryam','Nassim','Aya','Bilal','Hana','Idriss','Salma','Ayoub','Nour','Mehdi','Yasmine','Sami','Kenza','Anas','Lyna','Omar','Myriam'];
+const NOMS=['Amrani','Belkacem','Chaoui','Dahmani','El Idrissi','Ferhat','Ghali','Hadj','Issaoui','Jaber','Kaci','Lahlou','Mansouri','Naceri','Ouali','Rahmani','Saadi','Tahiri','Yahiaoui','Zerrouk','Bouzid','Cherif','Hamidi','Meziane'];
+const MATIERES=[{id:'fr',n:'Français',c:4,p:'Mme Lefèvre'},{id:'ma',n:'Mathématiques',c:4,p:'M. Benali'},{id:'hg',n:'Histoire-géo',c:3,p:'M. Roche'},{id:'an',n:'Anglais',c:3,p:'Mme Diallo'},{id:'sv',n:'SVT',c:2,p:'Mme Garnier'},{id:'ep',n:'EPS',c:2,p:'M. Hachemi'}];
+const E=PRENOMS.map((p,i)=>({id:i,p,n:NOMS[i],base:6+rnd()*13,beh:rnd()}));
+const EVALS={};MATIERES.forEach(m=>{EVALS[m.id]=[{t:'Contrôle 1',b:20,c:1},{t:'Devoir maison',b:10,c:0.5},{t:'Contrôle 2',b:20,c:2}].map(ev=>({...ev,notes:E.map(e=>{const r=rnd();if(r<.04)return'Abs';let v=(e.base+(rnd()-.5)*6)*ev.b/20;return Math.max(0,Math.min(ev.b,Math.round(v*2)/2))})}))});
+const OBS=E.map(e=>{const a=[];const np=Math.floor(rnd()*4),nn=Math.floor(e.beh<.25?2+rnd()*4:rnd()*2);for(let k=0;k<np;k++)a.push({pol:'+',t:['Participation active','Travail soigné','Aide un camarade'][k%3],m:MATIERES[Math.floor(rnd()*6)].n});for(let k=0;k<nn;k++)a.push({pol:'-',t:['Bavardages','Oubli de matériel','Travail non fait'][k%3],m:MATIERES[Math.floor(rnd()*6)].n});return a});
+const ABS=E.map(e=>({dj:Math.floor(rnd()*rnd()*8),ret:Math.floor(rnd()*rnd()*6),tel:e.beh<.2?Math.floor(1+rnd()*3):0}));
+const APPR={};MATIERES.forEach(m=>APPR[m.id]=E.map(()=>''));
+let S={role:'prof',appel:{},tels:{},telInc:{},mat:'ma',sel:0,conseil:{},proj:false,projI:0,auto:true};
+E.forEach(e=>{S.appel[e.id]={st:'present',palier:0,arr:'',sortie:'',obs:[],t:''};S.tels[e.id]={st:'',dep:'',ret:''}});
+try{const r=localStorage.getItem('lc-role');if(r)S.role=r}catch(err){}
+
+// ---------- Utilitaires ----------
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const now=()=>new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+const fmt=v=>v==null?'—':v.toFixed(2).replace('.',',');
+const cls=v=>v==null?'':v<8?'lo':v<10?'mid':v>=14?'hi':'';
+const nom=e=>`${e.p} ${e.n.toUpperCase()}`;
+const ini=e=>e.p[0]+e.n[0];
+function moyMat(mid,i){let s=0,c=0;for(const ev of EVALS[mid]){const v=ev.notes[i];if(typeof v==='number'){s+=v*20/ev.b*ev.c;c+=ev.c}}return c?s/c:null}
+function moyGen(i){let s=0,c=0;for(const m of MATIERES){const v=moyMat(m.id,i);if(v!=null){s+=v*m.c;c+=m.c}}return c?s/c:null}
+function moyClasse(mid){const a=E.map(e=>moyMat(mid,e.id)).filter(v=>v!=null);return a.reduce((x,y)=>x+y,0)/a.length}
+function avis(i){const g=moyGen(i),ms=MATIERES.map(m=>moyMat(m.id,i)).filter(v=>v!=null);const mn=Math.min(...ms);
+ if(g>18&&mn>16)return{a:'Éloges',k:'hi',w:''};
+ if(g>16&&mn>10)return{a:'Félicitations',k:'hi',w:g>18?'Éloges non retenus : une matière sous 16':''};
+ if(g>=14)return{a:'Compliments',k:'hi',w:g>16?'Félicitations non retenues : une matière sous 10':''};
+ if(g>=10.5)return{a:'Encouragements',k:'',w:''};
+ if(g>=10)return{a:'Encouragements ou avertissement',k:'mid',w:'Proche de 10 : à discuter en conseil'};
+ return{a:'Avertissement à discuter',k:'lo',w:'Travail, comportement ou les deux, selon le conseil'}}
+const obsCount=i=>({p:OBS[i].filter(o=>o.pol==='+').length,n:OBS[i].filter(o=>o.pol==='-').length});
+
+// ---------- Navigation ----------
+const VIEWS=[['accueil','Accueil'],['appel','Appel'],['telephones','Téléphones'],['notes','Notes'],['appreciations','Appréciations'],['conseil','Conseil de classe'],['bulletins','Bulletins']];
+const view=()=>{const h=location.hash.slice(1);return VIEWS.some(v=>v[0]===h)?h:'accueil'};
+function renderNav(){$('#nav').innerHTML=VIEWS.map(([k,l])=>`<a href="#${k}" ${view()===k?'aria-current="page"':''}>${l}</a>`).join('')}
+function render(){renderNav();$('#role').value=S.role;$('#app').innerHTML=(R[view()]||R.accueil)();bind()}
+addEventListener('hashchange',render);
+$('#role').addEventListener('change',e=>{S.role=e.target.value;try{localStorage.setItem('lc-role',S.role)}catch(err){}render()});
+
+// ---------- Vues ----------
+const R={};
+R.accueil=()=>{const abs=Object.values(S.appel).filter(a=>a.st==='absent').length,ret=Object.values(S.appel).filter(a=>a.st==='retard').length,dep=Object.values(S.tels).filter(t=>t.st==='depose').length;
+return `<div class="row sp"><h2>Bonjour, ${S.role==='dir'?'Monsieur le directeur':S.role==='vs'?'vie scolaire':'M. Benali'}</h2><span class="pill g">Démo · données fictives</span></div>
+<p class="mute">Classe de 4A · 24 élèves · Trimestre 1</p>
+<div class="banner">Appel manquant : 4A, Mathématiques 10h05–11h00 — non validé depuis 30 min.</div>
+<div class="grid">
+ <div class="card kpi"><b>${abs}</b><span>absents aujourd'hui</span></div>
+ <div class="card kpi"><b>${ret}</b><span>retards aujourd'hui</span></div>
+ <div class="card kpi"><b>${dep}/24</b><span>téléphones au coffre</span></div>
+ <div class="card kpi"><b>${fmt(E.reduce((s,e)=>s+moyGen(e.id),0)/E.length)}</b><span>moyenne générale de la classe</span></div>
+</div>
+<div class="grid" style="margin-top:16px">
+ <a class="card" href="#appel" style="color:inherit;text-decoration:none"><b>Faire l'appel</b><p class="mute small">Tous présents par défaut, retards par paliers de 5 min, observations multiples.</p></a>
+ <a class="card" href="#conseil" style="color:inherit;text-decoration:none"><b>Préparer le conseil</b><p class="mute small">Vue d'ensemble, avis proposés selon les règles du collège, mode projection.</p></a>
+ <a class="card" href="#appreciations" style="color:inherit;text-decoration:none"><b>Saisir les appréciations</b><p class="mute small">Proposition automatique modifiable, compteurs d'observations.</p></a>
+</div>`};
+
+R.appel=()=>{const a=S.appel;const n={a:0,r:0,s:0};E.forEach(e=>{const s=a[e.id].st;if(s==='absent')n.a++;if(s==='retard')n.r++;if(s==='sortie')n.s++});
+return `<div class="row sp"><div><h2>Appel · 4A · Mathématiques</h2><p class="mute">Mardi · 10h05–11h00 · salle B12</p></div>
+<div class="row"><span class="pill r">${n.a} absent${n.a>1?'s':''}</span><span class="pill g">${n.r} retard${n.r>1?'s':''}</span><span class="pill">${n.s} sortie${n.s>1?'s':''}</span><button class="teal" data-act="valider">Valider l'appel</button></div></div>
+<p class="mute small">Touchez un élève : présent → absent → retard → présent. Les heures sont enregistrées à la minute.</p>
+<div class="list">${E.map(e=>{const x=a[e.id];const lab=x.st==='absent'?'Absent':x.st==='retard'?`Retard ${x.palier} min · arrivé ${x.arr}`:x.st==='sortie'?`Sortie anticipée ${x.sortie}`:'Présent';
+return `<div class="stu ${x.st}"><div class="av">${ini(e)}</div>
+<button data-act="cycle" data-i="${e.id}" style="border:0;background:none;text-align:left;padding:0;min-height:44px"><b>${esc(nom(e))}</b><div class="obs">${lab}${x.t?` · saisi à ${x.t}`:''}${x.obs.length?` · ${x.obs.length} observation${x.obs.length>1?'s':''}`:''}</div></button>
+<div class="act"><button data-act="obs" data-i="${e.id}">+ Observation</button><button data-act="sortie" data-i="${e.id}">Sortie</button></div></div>`}).join('')}</div>`};
+
+R.telephones=()=>{const t=S.tels;const dep=E.filter(e=>t[e.id].st==='depose').length,rendu=E.filter(e=>t[e.id].st==='rendu').length;
+return `<div class="row sp"><div><h2>Coffre à téléphones</h2><p class="mute">Dépôt le matin, restitution en fin de journée, tout est horodaté.</p></div>
+<div class="row"><span class="pill">${dep} au coffre</span><span class="pill g">${rendu} rendus</span><button data-act="toutdep">Tous déposés</button><button class="primary" data-act="toutrendre">Tout rendre</button></div></div>
+${dep>0&&rendu<dep+rendu?`<div class="banner">Fin de journée : ${dep} téléphone${dep>1?'s':''} encore au coffre.</div>`:''}
+<div class="list">${E.map(e=>{const x=t[e.id];const inc=S.telInc[e.id]||0;const lab=x.st==='depose'?`Déposé à ${x.dep}`:x.st==='rendu'?`Déposé ${x.dep} · rendu ${x.ret}`:x.st==='sans'?'Pas de téléphone':x.st==='non'?`N'a pas déposé · ${x.dep}`:'—';
+return `<div class="stu ${x.st==='non'?'absent':''}"><div class="av">${ini(e)}</div><div><b>${esc(nom(e))}</b><div class="obs">${lab}${inc?` · ${inc} incident${inc>1?'s':''}`:''}${ABS[e.id].tel?` · ${ABS[e.id].tel} non-dépôt(s) ce trimestre`:''}</div></div>
+<div class="act">${x.st==='depose'?`<button class="teal" data-act="rendre" data-i="${e.id}">Rendre</button>`:x.st===''?`<button class="teal" data-act="deposer" data-i="${e.id}">Déposé</button><button data-act="sans" data-i="${e.id}">Pas de tél.</button><button data-act="nondep" data-i="${e.id}">Non déposé</button>`:''}<button data-act="incident" data-i="${e.id}">Incident</button></div></div>`}).join('')}</div>`};
+
+R.notes=()=>{const m=MATIERES.find(x=>x.id===S.mat),evs=EVALS[m.id];const mc=moyClasse(m.id);
+return `<div class="row sp"><div><h2>Notes · 4A</h2><p class="mute">Codes acceptés : Abs, Disp, NN, NR. Les moyennes se recalculent seules.</p></div>
+<select id="mat" aria-label="Matière">${MATIERES.map(x=>`<option value="${x.id}" ${x.id===m.id?'selected':''}>${x.n} (coef ${x.c})</option>`).join('')}</select></div>
+<div class="card tsticky" style="margin-top:16px;padding:8px"><table><thead><tr><th>Élève</th>${evs.map(ev=>`<th class="n">${esc(ev.t)}<br><span class="small">/${ev.b} · coef ${ev.c}</span></th>`).join('')}<th class="n">Moyenne</th></tr></thead>
+<tbody>${E.map(e=>{const v=moyMat(m.id,e.id);return `<tr><td>${esc(nom(e))}</td>${evs.map((ev,k)=>`<td class="n"><input aria-label="${esc(ev.t)} ${esc(nom(e))}" data-note="${k}" data-i="${e.id}" value="${typeof ev.notes[e.id]==='number'?String(ev.notes[e.id]).replace('.',','):ev.notes[e.id]}"></td>`).join('')}<td class="n ${cls(v)}" id="moy-${e.id}">${fmt(v)}</td></tr>`}).join('')}
+<tr><td><b>Classe</b></td>${evs.map(ev=>{const a=ev.notes.filter(x=>typeof x==='number');return `<td class="n mute small">${fmt(a.reduce((s,x)=>s+x,0)/a.length)}</td>`}).join('')}<td class="n"><b id="moyc">${fmt(mc)}</b></td></tr></tbody></table></div>`};
+
+function proposer(mid,i){const c=obsCount(i),e=E[i];const g=moyGen(i);const v=mid==='all'?g:moyMat(mid,i);
+ let t=v>=16?`Excellent trimestre. ${e.p} maîtrise les notions et fait preuve de rigueur.`:v>=13?`Bon trimestre. ${e.p} est sérieux(se) et obtient des résultats solides.`:v>=10?`Trimestre correct. ${e.p} doit approfondir son travail personnel pour progresser.`:`Trimestre difficile. ${e.p} doit fournir un travail plus régulier et ne pas hésiter à demander de l'aide.`;
+ if(mid==='all')t=g>=14?`Très bon trimestre dans l'ensemble. Les professeurs saluent le sérieux de ${e.p}. Continuez ainsi.`:g>=10?`Trimestre satisfaisant. ${e.p} peut viser plus haut avec davantage de régularité.`:`Trimestre insuffisant. ${e.p} doit se remobiliser dans toutes les matières dès la rentrée.`;
+ if(c.n>=3)t+=' Le comportement en classe doit s\'améliorer.';else if(c.p>=2)t+=' Une participation appréciée.';return t}
+function corriger(t){return t.replace(/\s+/g,' ').replace(/\s+([,.])/g,'$1').replace(/\s*([!?;:])/g,' $1').replace(/^./,c=>c.toUpperCase()).replace(/([.!?]) +(\p{Ll})/gu,(a,p,c)=>p+' '+c.toUpperCase()).replace(/ i /g,' il ').replace(/\btravaile\b/g,'travaille').replace(/\bdoit faire des efforts\b/g,'doit fournir des efforts').trim().replace(/([^.!?])$/,'$1.')}
+
+R.appreciations=()=>{const pp=S.role==='pp'||S.role==='dir';const mid=pp?'all':S.mat;
+return `<div class="row sp"><div><h2>${pp?'Appréciations générales · 4A':'Appréciations · '+MATIERES.find(m=>m.id===S.mat).n}</h2><p class="mute">${pp?'Les appréciations des collègues apparaissent en direct.':'Moyenne et observations à côté de chaque élève.'}</p></div>
+<div class="row">${!pp?`<select id="mat" aria-label="Matière">${MATIERES.map(x=>`<option value="${x.id}" ${x.id===S.mat?'selected':''}>${x.n}</option>`).join('')}</select>`:''}<button class="primary" data-act="proposerTout">Proposer pour la classe</button>${S.role==='dir'?'<button class="teal" data-act="corrigerTout">Corriger l\'orthographe</button>':''}</div></div>
+<p class="note" style="margin-top:8px">Démo : les propositions sont calculées dans la page à partir des notes et des observations (aucun service d'IA appelé).</p>
+<div class="card" style="margin-top:12px;padding:4px 20px">${E.map(e=>{const v=pp?moyGen(e.id):moyMat(S.mat,e.id),c=obsCount(e.id);
+const others=pp?MATIERES.map(m=>APPR[m.id][e.id]?`<div class="small"><b>${m.n}</b> · ${esc(APPR[m.id][e.id])}</div>`:'').join(''):'';
+return `<div class="appr"><div><b>${esc(nom(e))}</b><div class="${cls(v)}">${fmt(v)}</div><div class="row" style="gap:6px;margin-top:6px"><span class="pill">${c.p} +</span><span class="pill r">${c.n} −</span></div>${pp?`<div style="margin-top:6px"><span class="pill g">${avis(e.id).a}</span></div>`:''}</div>
+<div>${others?`<div style="margin-bottom:8px;display:grid;gap:4px">${others}</div>`:pp?'<div class="small mute" style="margin-bottom:8px">Aucune appréciation de collègue pour l\'instant.</div>':''}
+<textarea aria-label="Appréciation ${esc(nom(e))}" data-appr="${mid}" data-i="${e.id}" maxlength="300">${esc(APPR[mid]?.[e.id]||'')}</textarea>
+<div class="row" style="margin-top:6px"><button data-act="proposer" data-i="${e.id}" style="padding:6px 12px;font-size:14px;min-height:36px">Proposer</button>${S.role==='dir'?`<button data-act="corriger" data-i="${e.id}" style="padding:6px 12px;font-size:14px;min-height:36px">Corriger</button>`:''}<span class="small mute">${(APPR[mid]?.[e.id]||'').length}/300</span></div></div></div>`}).join('')}</div>`};
+APPR.all=E.map(()=>'');
+
+R.conseil=()=>{const g=E.map(e=>moyGen(e.id));const mc=g.reduce((a,b)=>a+b,0)/g.length;
+const tr=[['< 10',0,10],['10–12',10,12],['12–14',12,14],['14–16',14,16],['16–18',16,18],['> 18',18,21]].map(([l,a,b])=>[l,g.filter(v=>v>=a&&v<b).length]);const mx=Math.max(...tr.map(t=>t[1]));
+const av={};E.forEach(e=>{const k=(S.conseil[e.id]||avis(e.id).a);av[k]=(av[k]||0)+1});
+return `<div class="row sp"><div><h2>Conseil de classe · 4A · T1</h2><p class="mute">Professeur principal : M. Hachemi</p></div><button class="primary" data-act="projeter">Lancer le mode projection</button></div>
+<div class="grid" style="margin-top:16px"><div class="card kpi"><b>${fmt(mc)}</b><span>moyenne de la classe</span></div>
+<div class="card"><b>Répartition des moyennes</b><div class="bars" style="margin-top:12px">${tr.map(([l,n])=>`<div class="bar"><span>${l}</span><i style="width:${mx?n/mx*100:0}%"></i><b>${n}</b></div>`).join('')}</div></div>
+<div class="card"><b>Avis proposés</b><div style="margin-top:12px;display:grid;gap:6px">${Object.entries(av).map(([k,n])=>`<div class="row sp small"><span>${k}</span><b>${n}</b></div>`).join('')}</div></div></div>
+<div class="card tsticky" style="margin-top:16px;padding:8px"><table><thead><tr><th>Élève</th>${MATIERES.map(m=>`<th class="n" title="${m.n}">${m.n}</th>`).join('')}<th class="n">Moy.</th><th>Avis proposé</th><th>Avis retenu</th></tr></thead><tbody>
+${E.map(e=>{const a=avis(e.id);return `<tr><td>${esc(nom(e))}</td>${MATIERES.map(m=>{const v=moyMat(m.id,e.id);return `<td class="n ${cls(v)}">${fmt(v)}</td>`}).join('')}<td class="n"><b class="${cls(moyGen(e.id))}">${fmt(moyGen(e.id))}</b></td><td><span class="pill ${a.k==='lo'?'r':a.k==='mid'?'g':''}">${a.a}</span></td>
+<td><select aria-label="Avis retenu ${esc(nom(e))}" data-avis="${e.id}">${['','Éloges','Félicitations','Compliments','Encouragements','Aucun','Avertissement travail','Avertissement comportement','Avertissement travail et comportement'].map(o=>`<option ${S.conseil[e.id]===o?'selected':''}>${o}</option>`).join('')}</select></td></tr>`}).join('')}</tbody></table></div>`};
+
+R.bulletins=()=>{const e=E[S.sel];const a=S.conseil[e.id]||avis(e.id).a;
+return `<div class="row sp"><h2>Bulletins · 4A · T1</h2><select id="selb" aria-label="Élève">${E.map(x=>`<option value="${x.id}" ${x.id===e.id?'selected':''}>${esc(nom(x))}</option>`).join('')}</select></div>
+<p class="mute small">Aperçu A4. Dans la vraie application : PDF par élève et par classe, archivé dans Archives / 2026-2027 / 4A / T1.</p>
+<div class="bulletin" style="margin-top:16px"><div class="row sp"><div><h1>Collège Luqmân</h1><div style="color:#586578">Bulletin du 1er trimestre · 2026-2027</div></div><div style="text-align:right"><b>${esc(nom(e))}</b><div style="color:#586578">Classe de 4A · PP M. Hachemi</div></div></div>
+<table style="margin-top:20px"><thead><tr><th>Matière</th><th class="n">Élève</th><th class="n">Classe</th><th>Appréciation</th></tr></thead><tbody>
+${MATIERES.map(m=>`<tr><td><b>${m.n}</b><br><span style="color:#586578;font-size:13px">${m.p} · coef ${m.c}</span></td><td class="n"><b>${fmt(moyMat(m.id,e.id))}</b></td><td class="n">${fmt(moyClasse(m.id))}</td><td>${esc(APPR[m.id][e.id]||proposer(m.id,e.id))}</td></tr>`).join('')}
+<tr><td><b>Moyenne générale</b></td><td class="n"><b>${fmt(moyGen(e.id))}</b></td><td class="n">${fmt(E.reduce((s,x)=>s+moyGen(x.id),0)/E.length)}</td><td></td></tr></tbody></table>
+<p><b>Vie scolaire :</b> ${ABS[e.id].dj} demi-journée(s) d'absence · ${ABS[e.id].ret} retard(s)</p>
+<p><b>Appréciation générale :</b> ${esc(APPR.all[e.id]||proposer('all',e.id))}</p>
+<p><b>Avis du conseil de classe :</b> ${esc(a)}</p></div>`};
+
+// ---------- Mode projection ----------
+let raf=null;
+function projHTML(){const e=E[S.projI],a=S.conseil[e.id]||avis(e.id).a,c=obsCount(e.id);
+return `<div class="proj" role="dialog" aria-label="Conseil de classe projeté"><header><div class="brand"><b>Luqmân</b><small style="margin-left:8px">CONSEIL DE CLASSE · 4A · T1</small></div><span>${S.projI+1} / ${E.length}</span></header>
+<div class="stage" id="stage"><div class="inner" id="inner"><div class="row sp" style="align-items:flex-end;margin-bottom:24px"><div><h1>${esc(nom(e))}</h1><div class="avis">${esc(a)}</div></div><div style="text-align:right"><div class="big">${fmt(moyGen(e.id))}</div><div style="opacity:.7">moyenne générale</div></div></div>
+<table><thead><tr><th>Matière</th><th class="n">Élève</th><th class="n">Classe</th><th>Appréciation</th></tr></thead><tbody>${MATIERES.map(m=>`<tr><td>${m.n}</td><td class="n"><b>${fmt(moyMat(m.id,e.id))}</b></td><td class="n">${fmt(moyClasse(m.id))}</td><td>${esc(APPR[m.id][e.id]||proposer(m.id,e.id))}</td></tr>`).join('')}</tbody></table>
+<p style="margin-top:20px;font-size:clamp(16px,1.5vw,20px)">Observations : ${c.p} positives · ${c.n} négatives · Absences : ${ABS[e.id].dj} demi-journée(s) · Retards : ${ABS[e.id].ret}</p></div></div>
+<div class="ctrl"><button data-act="prev">← Élève précédent</button><button data-act="next">Élève suivant →</button><button data-act="auto">${S.auto?'Pause défilement':'Défilement auto'}</button>
+<select aria-label="Avis retenu" data-avis="${e.id}" style="background:rgba(255,255,255,.08);color:#fff;border-color:rgba(255,255,255,.2)">${['','Éloges','Félicitations','Compliments','Encouragements','Aucun','Avertissement travail','Avertissement comportement','Avertissement travail et comportement'].map(o=>`<option style="color:#0F172A" ${S.conseil[e.id]===o?'selected':''}>${o}</option>`).join('')}</select>
+<button data-act="fermer" style="margin-left:auto">Fermer</button></div></div>`}
+function startScroll(){cancelAnimationFrame(raf);const st=$('#stage'),inn=$('#inner');if(!st||!inn)return;let y=0,dir=1,wait=90;
+ const step=()=>{const over=inn.scrollHeight-st.clientHeight;if(S.auto&&over>0){if(wait>0)wait--;else{y+=dir*0.5;if(y>=over){y=over;dir=-1;wait=120}if(y<=0){y=0;dir=1;wait=120}}inn.style.transform=`translateY(${-y}px)`}else inn.style.transform='';raf=requestAnimationFrame(step)};
+ if(!matchMedia('(prefers-reduced-motion: reduce)').matches)step()}
+function renderProj(){$('#layer').innerHTML=S.proj?projHTML():'';if(S.proj){startScroll();bindLayer()}else cancelAnimationFrame(raf)}
+
+// ---------- Dialogues ----------
+function dialog(html,onOk){$('#layer').innerHTML=`<div class="dialog"><div class="card">${html}<div class="row" style="margin-top:16px;justify-content:flex-end"><button data-d="x">Annuler</button><button class="teal" data-d="ok">Enregistrer</button></div></div></div>`;
+ $('#layer [data-d=x]').onclick=()=>$('#layer').innerHTML='';$('#layer [data-d=ok]').onclick=()=>{onOk();$('#layer').innerHTML='';render()};
+ $('#layer').querySelectorAll('.chips button').forEach(b=>b.onclick=()=>{b.parentNode.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on')})}
+const picked=g=>$(`#layer [data-g="${g}"] .on`)?.dataset.v;
+
+// ---------- Actions ----------
+const A={
+ cycle:i=>{const x=S.appel[i];if(x.st==='present'){x.st='absent';x.t=now()}else if(x.st==='absent'){dialog(`<h2 style="font-size:22px">Retard · ${esc(nom(E[i]))}</h2><div class="chips" data-g="p">${[5,10,15,20,25,30].map((p,k)=>`<button data-v="${p}" class="${k?'':'on'}">${p} min${p===30?' et +':''}</button>`).join('')}</div><p class="small mute">Heure réelle d'arrivée enregistrée : ${now()}</p>`,()=>{x.st='retard';x.palier=+picked('p');x.arr=now();x.t=now()});return}else{x.st='present';x.t=now()}render()},
+ obs:i=>dialog(`<h2 style="font-size:22px">Observation · ${esc(nom(E[i]))}</h2><div class="chips" data-g="t">${['Participation active','Travail soigné','Bavardages','Oubli de matériel','Travail non fait','Téléphone'].map((t,k)=>`<button data-v="${t}" class="${k?'':'on'}">${t}</button>`).join('')}</div><label class="small" for="otxt">Précision (facultatif)</label><textarea id="otxt"></textarea><label class="row small" style="margin-top:8px"><input type="checkbox" id="ocar" style="min-height:auto"> Mot dans le carnet</label>`,()=>{const t=picked('t');S.appel[i].obs.push({t,txt:$('#otxt').value,h:now(),carnet:$('#ocar').checked});OBS[i].push({pol:['Participation active','Travail soigné'].includes(t)?'+':'-',t,m:'Mathématiques'})}),
+ sortie:i=>dialog(`<h2 style="font-size:22px">Sortie anticipée · ${esc(nom(E[i]))}</h2><label class="small" for="sh">Heure</label><input id="sh" type="time" value="${now()}"><label class="small" for="sa" style="display:block;margin-top:8px">Autorisée par / récupéré par</label><input id="sa" style="width:100%" value="Vie scolaire · Mme Kaci (mère)">`,()=>{const x=S.appel[i];x.st='sortie';x.sortie=$('#sh').value;x.t=now()}),
+ valider:()=>{const items=E.filter(e=>S.appel[e.id].obs.length);$('#layer').innerHTML=`<div class="dialog"><div class="card"><h2 style="font-size:22px">Récapitulatif de fin de cours</h2><p class="mute small">Appel validé à ${now()}.</p>${items.length?items.map(e=>`<p><b>${esc(nom(e))}</b><br>${S.appel[e.id].obs.map(o=>`${o.h} · ${esc(o.t)}${o.txt?' — '+esc(o.txt):''}${o.carnet?' · mot dans le carnet':''}`).join('<br>')}</p>`).join(''):'<p>Aucune observation sur ce cours.</p>'}<div class="row" style="justify-content:flex-end"><button class="teal" data-d="x">Fermer</button></div></div></div>`;$('#layer [data-d=x]').onclick=()=>$('#layer').innerHTML=''},
+ deposer:i=>{S.tels[i]={st:'depose',dep:now(),ret:''};render()},
+ sans:i=>{S.tels[i]={st:'sans',dep:now(),ret:''};render()},
+ nondep:i=>{S.tels[i]={st:'non',dep:now(),ret:''};render()},
+ toutrendre:()=>{E.forEach(e=>{if(S.tels[e.id].st==='depose'){S.tels[e.id].st='rendu';S.tels[e.id].ret=now()}});render()},
+ rendre:i=>{S.tels[i].st='rendu';S.tels[i].ret=now();render()},
+ toutdep:()=>{E.forEach(e=>{if(!S.tels[e.id].st)S.tels[e.id]={st:'depose',dep:now(),ret:''}});render()},
+ incident:i=>dialog(`<h2 style="font-size:22px">Incident téléphone · ${esc(nom(E[i]))}</h2><p class="small mute">Constaté à ${now()}. Une observation négative « Téléphone » sera créée.</p><div class="chips" data-g="m">${['Confisqué, rendu en fin de journée','Remis aux parents'].map((t,k)=>`<button data-v="${t}" class="${k?'':'on'}">${t}</button>`).join('')}</div><label class="small" for="il">Lieu</label><input id="il" style="width:100%" value="Cour de récréation">`,()=>{S.telInc[i]=(S.telInc[i]||0)+1;OBS[i].push({pol:'-',t:'Téléphone',m:'Vie scolaire'})}),
+ proposer:i=>{const mid=(S.role==='pp'||S.role==='dir')?'all':S.mat;APPR[mid][i]=proposer(mid,i);render()},
+ proposerTout:()=>{const mid=(S.role==='pp'||S.role==='dir')?'all':S.mat;E.forEach(e=>{if(!APPR[mid][e.id])APPR[mid][e.id]=proposer(mid,e.id)});render()},
+ corriger:i=>{APPR.all[i]=corriger(APPR.all[i]||'');render()},
+ corrigerTout:()=>{E.forEach(e=>{if(APPR.all[e.id])APPR.all[e.id]=corriger(APPR.all[e.id])});render()},
+ projeter:()=>{S.proj=true;S.projI=0;renderProj()},
+ next:()=>{S.projI=(S.projI+1)%E.length;renderProj()},prev:()=>{S.projI=(S.projI-1+E.length)%E.length;renderProj()},
+ auto:()=>{S.auto=!S.auto;renderProj()},fermer:()=>{S.proj=false;renderProj();render()}
+};
+function bind(){
+ $('#app').querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>A[b.dataset.act](+b.dataset.i));
+ const ms=$('#mat');if(ms)ms.onchange=()=>{S.mat=ms.value;render()};
+ const sb=$('#selb');if(sb)sb.onchange=()=>{S.sel=+sb.value;render()};
+ $('#app').querySelectorAll('[data-note]').forEach(inp=>inp.onchange=()=>{const i=+inp.dataset.i,k=+inp.dataset.note,ev=EVALS[S.mat][k];const raw=inp.value.trim();
+  if(['Abs','Disp','NN','NR'].map(x=>x.toLowerCase()).includes(raw.toLowerCase()))ev.notes[i]=raw[0].toUpperCase()+raw.slice(1).toLowerCase().replace('nn','NN').replace('nr','NR');
+  else{const v=parseFloat(raw.replace(',','.'));if(isNaN(v)||v<0||v>ev.b){inp.style.borderColor='var(--red)';inp.title=`Note entre 0 et ${ev.b}, ou Abs, Disp, NN, NR`;return}ev.notes[i]=v}
+  inp.style.borderColor='';const m=moyMat(S.mat,i),c=$('#moy-'+i);c.textContent=fmt(m);c.className='n '+cls(m);$('#moyc').textContent=fmt(moyClasse(S.mat))});
+ const fit=t=>{t.style.height='auto';t.style.height=t.scrollHeight+2+'px'};$('#app').querySelectorAll('[data-appr]').forEach(t=>{fit(t);t.oninput=()=>{fit(t);APPR[t.dataset.appr][+t.dataset.i]=t.value;t.parentNode.querySelector('.small.mute').textContent=t.value.length+'/300'}});
+ $('#app').querySelectorAll('[data-avis]').forEach(s=>s.onchange=()=>{S.conseil[+s.dataset.avis]=s.value});
+}
+function bindLayer(){$('#layer').querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>A[b.dataset.act]());$('#layer').querySelectorAll('[data-avis]').forEach(s=>s.onchange=()=>{S.conseil[+s.dataset.avis]=s.value;renderProj()})}
+addEventListener('keydown',e=>{if(!S.proj)return;if(e.key==='ArrowRight')A.next();if(e.key==='ArrowLeft')A.prev();if(e.key==='Escape')A.fermer()});
+render();
+}
+</script>
+</body>
+</html>
