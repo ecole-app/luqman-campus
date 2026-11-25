@@ -98,6 +98,19 @@ textarea{width:100%;min-height:72px;resize:none;overflow:hidden}
 .note{font-size:13px;color:var(--mute);margin-top:24px}
 @media(max-width:600px){.appr{grid-template-columns:1fr}.stu{grid-template-columns:44px minmax(0,1fr)}.stu .act{grid-column:1/-1;justify-content:flex-start}.bulletin{padding:20px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+.pcb{min-width:68px;min-height:40px;padding:4px 8px;font-size:13px}
+.pcb.p{background:var(--goldbg);color:var(--goldd);border-color:var(--gold)}
+.pcb.c{background:var(--redbg);color:var(--red);border-color:var(--red)}
+.sea{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.sea.done b{text-decoration:line-through;opacity:.6}
+.prog{height:8px;border-radius:6px;background:var(--tealbg);overflow:hidden}.prog i{display:block;height:100%;background:var(--teal)}
+.two{display:grid;gap:16px;grid-template-columns:minmax(0,280px) minmax(0,1fr)}
+@media(max-width:800px){.two{grid-template-columns:1fr}}
+.pj{display:flex;justify-content:space-between;align-items:center;width:100%;text-align:left;gap:8px}
+.pj.on{background:var(--teal);color:#fff;border-color:var(--teal)}
+select.cs{width:60px;padding:6px 8px;min-height:36px}
+.lv1{color:var(--red);font-weight:700}.lv2{color:var(--goldd);font-weight:700}.lv3{color:var(--teal);font-weight:700}.lv4{color:var(--teal);font-weight:800}
+body.ecran>header,body.ecran>nav,body.ecran>main{display:none}
 </style>
 </head>
 <body>
@@ -112,6 +125,8 @@ textarea{width:100%;min-height:72px;resize:none;overflow:hidden}
     <option value="pp">Professeur principal 4A</option>
     <option value="vs">Vie scolaire</option>
     <option value="dir">Direction</option>
+    <option value="parent">Parent de Sarah (aperçu)</option>
+    <option value="eleve">Élève Sarah (aperçu)</option>
   </select>
 </header>
 <nav id="nav" aria-label="Sections"></nav>
@@ -132,6 +147,40 @@ const APPR={};MATIERES.forEach(m=>APPR[m.id]=E.map(()=>''));
 let S={role:'prof',appel:{},tels:{},telInc:{},mat:'ma',sel:0,conseil:{},proj:false,projI:0,auto:true};
 E.forEach(e=>{S.appel[e.id]={st:'present',palier:0,arr:'',sortie:'',obs:[],t:''};S.tels[e.id]={st:'',dep:'',ret:''}});
 try{const r=localStorage.getItem('lc-role');if(r)S.role=r}catch(err){}
+// ---------- Réglages et données des nouveaux modules ----------
+const CFG={appelDelai:30,alerteVS:15,palier:5,enc:10,proche:0.5,compl:14,felic:16,felicMin:10,eloge:18,elogeMin:16,cycleN:6,cycleNiv:3,telSeuil:3,telHeure:'16:30',maxJour:6,rang:true,publie:true};
+const SOCLE=['Langue française à l’oral et à l’écrit','Langues étrangères et régionales','Langages mathématiques, scientifiques et informatiques','Langages des arts et du corps','Méthodes et outils pour apprendre','Formation de la personne et du citoyen','Systèmes naturels et systèmes techniques','Représentations du monde et activité humaine'];
+const NIV=['Maîtrise insuffisante','Maîtrise fragile','Maîtrise satisfaisante','Très bonne maîtrise'];
+const COMP=E.map(e=>SOCLE.map(()=>Math.max(1,Math.min(4,Math.round(e.base/19*3+1+(rnd()-.5)*1.6)))));
+const DAYS=['Lun','Mar','Mer','Jeu','Ven'],SL=['8h','9h','10h','11h','14h','15h','16h'];
+const okSlot=(d,s)=>!(d===2&&s>=4);
+const CLS=['6A','5A','4A'];
+const HRS={fr:4,ma:4,hg:3,an:3,sv:2,ep:2};
+const TP={fr:{'0-0':'p','4-4':'p'},ma:{'1-0':'p','3-4':'c','3-5':'c','3-6':'c'},hg:{'4-4':'c','4-5':'c','4-6':'c','0-0':'p'},an:{'2-3':'p','0-6':'p'},sv:{'1-4':'c','1-5':'c'},ep:{'0-0':'c','2-3':'p'}};
+let EDT=null;
+const UNIT={fr:'Séquence',hg:'Chapitre',an:'Unité',ma:'Chapitre',sv:'Chapitre',ep:'Cycle'};
+const FIELD={fr:'Texte support',hg:'Documents',an:'Support (audio, texte)',ma:'Exercices du manuel',sv:'Matériel de manipulation',ep:'Matériel et sécurité'};
+const sea=(t,o,d,f,c,done)=>({t,o,d,f,c,done:!!done});
+const PED={hg:[],an:[],sv:[],
+ fr:[{t:'Le roman d’aventures',per:'Sept. – Nov.',s:[sea('Lecture : incipit','Repérer les personnages',55,'Texte p. 12',1,1),sea('Atelier d’écriture','Rédiger un portrait',55,'Fiche méthode',1,0)]}],
+ ma:[{t:'Fractions et proportionnalité',per:'Sept. – Oct.',s:[sea('Fractions équivalentes','Simplifier et comparer',55,'p. 24 n°3 à 8',3,1),sea('Additions de fractions','Même dénominateur puis différents',55,'p. 28',3,1),sea('Proportionnalité','Reconnaître un tableau',55,'p. 40',3,0)]},{t:'Équations',per:'Nov. – Déc.',s:[sea('Résoudre ax+b=c','Isoler l’inconnue',55,'p. 60',5,0),sea('Mise en équation','Traduire un problème',55,'p. 64',3,0)]}],
+ ep:[{t:'Athlétisme : le relais',per:'Sept. – Oct.',s:[sea('Course de vitesse','Départ et transmission',110,'Plots, témoins, chronomètres',4,1),sea('Relais 4x50','Zone de transmission',110,'Plots, témoins',6,1),sea('Évaluation','Barème du relais',110,'Feuille de barème',4,0)]},{t:'Basket',per:'Nov. – Déc.',s:[sea('Passes et démarquage','Jouer sans ballon',110,'Ballons, chasubles',4,0),sea('Jeu à 3 contre 3','Créer le surnombre',110,'Ballons, plots',6,0)]}]};
+const PUN=[{i:3,type:'Retenue',motif:'Bavardages répétés',date:'18/11',par:'M. Roche',st:'afaire'},{i:7,type:'Devoir supplémentaire',motif:'Travail non fait',date:'19/11',par:'Mme Lefèvre',st:'faite'},{i:11,type:'Avertissement de conduite',motif:'Insolence',date:'20/11',par:'Vie scolaire',st:'faite'},{i:3,type:'Exclusion de cours',motif:'Perturbation du cours',date:'21/11',par:'M. Benali',st:'afaire'},{i:17,type:'Retenue',motif:'Non-dépôt téléphone',date:'24/11',par:'Vie scolaire',st:'afaire'}];
+const PTYPES=['Devoir supplémentaire','Retenue','Exclusion de cours','Avertissement de conduite'];
+const JUST=[];
+const FAM=5;
+const STAFF=[{n:'M. Benali',r:'prof',a:true},{n:'M. Hachemi',r:'pp',a:true},{n:'Mme Lefèvre',r:'prof',a:true},{n:'M. Roche',r:'prof',a:true},{n:'Mme Kaci',r:'vs',a:true},{n:'Le directeur',r:'dir',a:true},{n:'Gestionnaire de l’application',r:'gest',a:true}];
+const LOG=[];
+const RV={prof:['accueil','appel','telephones','notes','appreciations','edt','pedago'],
+ pp:['accueil','appel','telephones','notes','appreciations','competences','conseil','bulletins','edt','pedago'],
+ vs:['accueil','appel','telephones','viesco','edt'],
+ dir:['accueil','appel','telephones','viesco','notes','appreciations','competences','conseil','bulletins','edt','pedago','reglages'],
+ parent:['accueil','mesnotes','mavie','bulletins','edt'],eleve:['accueil','mesnotes','mavie','bulletins','edt']};
+const VL={accueil:'Accueil',appel:'Appel',telephones:'Téléphones',viesco:'Vie scolaire',notes:'Notes',appreciations:'Appréciations',competences:'Compétences',conseil:'Conseil de classe',bulletins:'Bulletins',edt:'Emploi du temps',pedago:'Mon espace',reglages:'Réglages',mesnotes:'Mes notes',mavie:'Vie scolaire'};
+const NAMES={prof:'M. Benali',pp:'M. Hachemi',vs:'vie scolaire',dir:'Monsieur le directeur'};
+const CARDS=[['appel','Faire l’appel','Tous présents par défaut, retards par paliers, observations multiples.'],['viesco','Vie scolaire','Justificatifs, punitions, sanctions, fil de la journée.'],['appreciations','Saisir les appréciations','Proposition automatique modifiable, compteurs d’observations.'],['competences','Compétences de cycle','Socle commun et validation du cycle.'],['conseil','Préparer le conseil','Avis proposés, projection, mode 2 écrans.'],['edt','Emploi du temps','Contraintes, souhaits, générateur.'],['pedago','Mon espace pédagogique','Cycles, séances, planning.'],['reglages','Réglages','Seuils, coefficients, droits.']];
+if(!RV[S.role])S.role='prof';
+
 
 // ---------- Utilitaires ----------
 const $=s=>document.querySelector(s);
@@ -145,26 +194,27 @@ function moyMat(mid,i){let s=0,c=0;for(const ev of EVALS[mid]){const v=ev.notes[
 function moyGen(i){let s=0,c=0;for(const m of MATIERES){const v=moyMat(m.id,i);if(v!=null){s+=v*m.c;c+=m.c}}return c?s/c:null}
 function moyClasse(mid){const a=E.map(e=>moyMat(mid,e.id)).filter(v=>v!=null);return a.reduce((x,y)=>x+y,0)/a.length}
 function avis(i){const g=moyGen(i),ms=MATIERES.map(m=>moyMat(m.id,i)).filter(v=>v!=null);const mn=Math.min(...ms);
- if(g>18&&mn>16)return{a:'Éloges',k:'hi',w:''};
- if(g>16&&mn>10)return{a:'Félicitations',k:'hi',w:g>18?'Éloges non retenus : une matière sous 16':''};
- if(g>=14)return{a:'Compliments',k:'hi',w:g>16?'Félicitations non retenues : une matière sous 10':''};
- if(g>=10.5)return{a:'Encouragements',k:'',w:''};
- if(g>=10)return{a:'Encouragements ou avertissement',k:'mid',w:'Proche de 10 : à discuter en conseil'};
+ if(g>CFG.eloge&&mn>CFG.elogeMin)return{a:'Éloges',k:'hi',w:''};
+ if(g>CFG.felic&&mn>CFG.felicMin)return{a:'Félicitations',k:'hi',w:g>CFG.eloge?`Éloges non retenus : une matière sous ${CFG.elogeMin}`:''};
+ if(g>=CFG.compl)return{a:'Compliments',k:'hi',w:g>CFG.felic?`Félicitations non retenues : une matière sous ${CFG.felicMin}`:''};
+ if(g>=CFG.enc+CFG.proche)return{a:'Encouragements',k:'',w:''};
+ if(g>=CFG.enc)return{a:'Encouragements ou avertissement',k:'mid',w:'Proche du seuil : à discuter en conseil'};
  return{a:'Avertissement à discuter',k:'lo',w:'Travail, comportement ou les deux, selon le conseil'}}
 const obsCount=i=>({p:OBS[i].filter(o=>o.pol==='+').length,n:OBS[i].filter(o=>o.pol==='-').length});
 
 // ---------- Navigation ----------
-const VIEWS=[['accueil','Accueil'],['appel','Appel'],['telephones','Téléphones'],['notes','Notes'],['appreciations','Appréciations'],['conseil','Conseil de classe'],['bulletins','Bulletins']];
-const view=()=>{const h=location.hash.slice(1);return VIEWS.some(v=>v[0]===h)?h:'accueil'};
-function renderNav(){$('#nav').innerHTML=VIEWS.map(([k,l])=>`<a href="#${k}" ${view()===k?'aria-current="page"':''}>${l}</a>`).join('')}
-function render(){renderNav();$('#role').value=S.role;$('#app').innerHTML=(R[view()]||R.accueil)();bind()}
+const allowed=v=>(RV[S.role]||[]).includes(v)||(v==='pilotage'&&['pp','dir'].includes(S.role));
+const view=()=>{const h=location.hash.slice(1);return allowed(h)?h:'accueil'};
+function renderNav(){const cur=view()==='pilotage'?'conseil':view();$('#nav').innerHTML=RV[S.role].map(k=>`<a href="#${k}" ${cur===k?'aria-current="page"':''}>${VL[k]}</a>`).join('')}
+function render(){renderNav();$('#role').value=S.role;$('#app').innerHTML=(R[view()]||R.accueil)();bind();bindX()}
 addEventListener('hashchange',render);
 $('#role').addEventListener('change',e=>{S.role=e.target.value;try{localStorage.setItem('lc-role',S.role)}catch(err){}render()});
 
 // ---------- Vues ----------
 const R={};
 R.accueil=()=>{const abs=Object.values(S.appel).filter(a=>a.st==='absent').length,ret=Object.values(S.appel).filter(a=>a.st==='retard').length,dep=Object.values(S.tels).filter(t=>t.st==='depose').length;
-return `<div class="row sp"><h2>Bonjour, ${S.role==='dir'?'Monsieur le directeur':S.role==='vs'?'vie scolaire':'M. Benali'}</h2><span class="pill g">Démo · données fictives</span></div>
+if(isFam())return R.accueilFam();
+return `<div class="row sp"><h2>Bonjour, ${NAMES[S.role]}</h2><span class="pill g">Démo · données fictives</span></div>
 <p class="mute">Classe de 4A · 24 élèves · Trimestre 1</p>
 <div class="banner">Appel manquant : 4A, Mathématiques 10h05–11h00 — non validé depuis 30 min.</div>
 <div class="grid">
@@ -173,11 +223,7 @@ return `<div class="row sp"><h2>Bonjour, ${S.role==='dir'?'Monsieur le directeur
  <div class="card kpi"><b>${dep}/24</b><span>téléphones au coffre</span></div>
  <div class="card kpi"><b>${fmt(E.reduce((s,e)=>s+moyGen(e.id),0)/E.length)}</b><span>moyenne générale de la classe</span></div>
 </div>
-<div class="grid" style="margin-top:16px">
- <a class="card" href="#appel" style="color:inherit;text-decoration:none"><b>Faire l'appel</b><p class="mute small">Tous présents par défaut, retards par paliers de 5 min, observations multiples.</p></a>
- <a class="card" href="#conseil" style="color:inherit;text-decoration:none"><b>Préparer le conseil</b><p class="mute small">Vue d'ensemble, avis proposés selon les règles du collège, mode projection.</p></a>
- <a class="card" href="#appreciations" style="color:inherit;text-decoration:none"><b>Saisir les appréciations</b><p class="mute small">Proposition automatique modifiable, compteurs d'observations.</p></a>
-</div>`};
+<div class="grid" style="margin-top:16px">${CARDS.filter(c=>allowed(c[0])).map(c=>`<a class="card" href="#${c[0]}" style="color:inherit;text-decoration:none"><b>${c[1]}</b><p class="mute small">${c[2]}</p></a>`).join('')}</div>`};
 
 R.appel=()=>{const a=S.appel;const n={a:0,r:0,s:0};E.forEach(e=>{const s=a[e.id].st;if(s==='absent')n.a++;if(s==='retard')n.r++;if(s==='sortie')n.s++});
 return `<div class="row sp"><div><h2>Appel · 4A · Mathématiques</h2><p class="mute">Mardi · 10h05–11h00 · salle B12</p></div>
@@ -224,7 +270,7 @@ APPR.all=E.map(()=>'');
 R.conseil=()=>{const g=E.map(e=>moyGen(e.id));const mc=g.reduce((a,b)=>a+b,0)/g.length;
 const tr=[['< 10',0,10],['10–12',10,12],['12–14',12,14],['14–16',14,16],['16–18',16,18],['> 18',18,21]].map(([l,a,b])=>[l,g.filter(v=>v>=a&&v<b).length]);const mx=Math.max(...tr.map(t=>t[1]));
 const av={};E.forEach(e=>{const k=(S.conseil[e.id]||avis(e.id).a);av[k]=(av[k]||0)+1});
-return `<div class="row sp"><div><h2>Conseil de classe · 4A · T1</h2><p class="mute">Professeur principal : M. Hachemi</p></div><button class="primary" data-act="projeter">Lancer le mode projection</button></div>
+return `<div class="row sp"><div><h2>Conseil de classe · 4A · T1</h2><p class="mute">Professeur principal : M. Hachemi</p></div><div class="row"><button class="primary" data-act="pilotage">Mode 2 écrans (pilotage + écran projeté)</button><button data-act="projeter">Projection sur cet écran</button></div></div>
 <div class="grid" style="margin-top:16px"><div class="card kpi"><b>${fmt(mc)}</b><span>moyenne de la classe</span></div>
 <div class="card"><b>Répartition des moyennes</b><div class="bars" style="margin-top:12px">${tr.map(([l,n])=>`<div class="bar"><span>${l}</span><i style="width:${mx?n/mx*100:0}%"></i><b>${n}</b></div>`).join('')}</div></div>
 <div class="card"><b>Avis proposés</b><div style="margin-top:12px;display:grid;gap:6px">${Object.entries(av).map(([k,n])=>`<div class="row sp small"><span>${k}</span><b>${n}</b></div>`).join('')}</div></div></div>
@@ -232,8 +278,8 @@ return `<div class="row sp"><div><h2>Conseil de classe · 4A · T1</h2><p class=
 ${E.map(e=>{const a=avis(e.id);return `<tr><td>${esc(nom(e))}</td>${MATIERES.map(m=>{const v=moyMat(m.id,e.id);return `<td class="n ${cls(v)}">${fmt(v)}</td>`}).join('')}<td class="n"><b class="${cls(moyGen(e.id))}">${fmt(moyGen(e.id))}</b></td><td><span class="pill ${a.k==='lo'?'r':a.k==='mid'?'g':''}">${a.a}</span></td>
 <td><select aria-label="Avis retenu ${esc(nom(e))}" data-avis="${e.id}">${['','Éloges','Félicitations','Compliments','Encouragements','Aucun','Avertissement travail','Avertissement comportement','Avertissement travail et comportement'].map(o=>`<option ${S.conseil[e.id]===o?'selected':''}>${o}</option>`).join('')}</select></td></tr>`}).join('')}</tbody></table></div>`};
 
-R.bulletins=()=>{const e=E[S.sel];const a=S.conseil[e.id]||avis(e.id).a;
-return `<div class="row sp"><h2>Bulletins · 4A · T1</h2><select id="selb" aria-label="Élève">${E.map(x=>`<option value="${x.id}" ${x.id===e.id?'selected':''}>${esc(nom(x))}</option>`).join('')}</select></div>
+R.bulletins=()=>{const fam=isFam();const e=E[fam?FAM:S.sel];const a=S.conseil[e.id]||avis(e.id).a;if(fam&&!CFG.publie)return `<div class="card"><h2>Bulletin</h2><p>Le bulletin du 1er trimestre n’est pas encore publié. La direction le publie depuis Réglages.</p></div>`;
+return `<div class="row sp"><h2>Bulletins · 4A · T1</h2>${fam?'':`<select id="selb" aria-label="Élève">${E.map(x=>`<option value="${x.id}" ${x.id===e.id?'selected':''}>${esc(nom(x))}</option>`).join('')}</select>`}</div>
 <p class="mute small">Aperçu A4. Dans la vraie application : PDF par élève et par classe, archivé dans Archives / 2026-2027 / 4A / T1.</p>
 <div class="bulletin" style="margin-top:16px"><div class="row sp"><div><h1>Collège Luqmân</h1><div style="color:#586578">Bulletin du 1er trimestre · 2026-2027</div></div><div style="text-align:right"><b>${esc(nom(e))}</b><div style="color:#586578">Classe de 4A · PP M. Hachemi</div></div></div>
 <table style="margin-top:20px"><thead><tr><th>Matière</th><th class="n">Élève</th><th class="n">Classe</th><th>Appréciation</th></tr></thead><tbody>
@@ -241,18 +287,19 @@ ${MATIERES.map(m=>`<tr><td><b>${m.n}</b><br><span style="color:#586578;font-size
 <tr><td><b>Moyenne générale</b></td><td class="n"><b>${fmt(moyGen(e.id))}</b></td><td class="n">${fmt(E.reduce((s,x)=>s+moyGen(x.id),0)/E.length)}</td><td></td></tr></tbody></table>
 <p><b>Vie scolaire :</b> ${ABS[e.id].dj} demi-journée(s) d'absence · ${ABS[e.id].ret} retard(s)</p>
 <p><b>Appréciation générale :</b> ${esc(APPR.all[e.id]||proposer('all',e.id))}</p>
+<p><b>Compétences du cycle :</b> ${compOk(e.id)}/8 composantes au niveau ${CFG.cycleNiv} ou plus · ${verdict(e.id)[0]}</p>${CFG.rang?`<p><b>Rang :</b> ${rang(e.id)} / ${E.length}</p>`:''}
 <p><b>Avis du conseil de classe :</b> ${esc(a)}</p></div>`};
 
 // ---------- Mode projection ----------
 let raf=null;
-function projHTML(){const e=E[S.projI],a=S.conseil[e.id]||avis(e.id).a,c=obsCount(e.id);
-return `<div class="proj" role="dialog" aria-label="Conseil de classe projeté"><header><div class="brand"><b>Luqmân</b><small style="margin-left:8px">CONSEIL DE CLASSE · 4A · T1</small></div><span>${S.projI+1} / ${E.length}</span></header>
+function projHTML(screen){const e=E[S.projI],a=S.conseil[e.id]||avis(e.id).a,c=obsCount(e.id);
+const html=`<div class="proj" role="dialog" aria-label="Conseil de classe projeté"><header><div class="brand"><b>Luqmân</b><small style="margin-left:8px">CONSEIL DE CLASSE · 4A · T1</small></div><span>${S.projI+1} / ${E.length}${screen?' <button data-act="plein" style="margin-left:12px;background:rgba(255,255,255,.08);color:#fff;border-color:rgba(255,255,255,.2);min-height:36px;padding:4px 12px">Plein écran</button>':''}</span></header>
 <div class="stage" id="stage"><div class="inner" id="inner"><div class="row sp" style="align-items:flex-end;margin-bottom:24px"><div><h1>${esc(nom(e))}</h1><div class="avis">${esc(a)}</div></div><div style="text-align:right"><div class="big">${fmt(moyGen(e.id))}</div><div style="opacity:.7">moyenne générale</div></div></div>
 <table><thead><tr><th>Matière</th><th class="n">Élève</th><th class="n">Classe</th><th>Appréciation</th></tr></thead><tbody>${MATIERES.map(m=>`<tr><td>${m.n}</td><td class="n"><b>${fmt(moyMat(m.id,e.id))}</b></td><td class="n">${fmt(moyClasse(m.id))}</td><td>${esc(APPR[m.id][e.id]||proposer(m.id,e.id))}</td></tr>`).join('')}</tbody></table>
-<p style="margin-top:20px;font-size:clamp(16px,1.5vw,20px)">Observations : ${c.p} positives · ${c.n} négatives · Absences : ${ABS[e.id].dj} demi-journée(s) · Retards : ${ABS[e.id].ret}</p></div></div>
+<p style="margin-top:20px;font-size:clamp(16px,1.5vw,20px)">Observations : ${c.p} positives · ${c.n} négatives · Absences : ${ABS[e.id].dj} demi-journée(s) · Retards : ${ABS[e.id].ret}</p><p style="font-size:clamp(16px,1.5vw,20px)">Socle commun : ${compOk(e.id)}/8 composantes au niveau ${CFG.cycleNiv} ou plus · ${verdict(e.id)[0]}</p><p style="font-size:clamp(16px,1.5vw,20px)"><b>Appréciation générale :</b> ${esc(APPR.all[e.id]||proposer('all',e.id))}</p></div></div>
 <div class="ctrl"><button data-act="prev">← Élève précédent</button><button data-act="next">Élève suivant →</button><button data-act="auto">${S.auto?'Pause défilement':'Défilement auto'}</button>
 <select aria-label="Avis retenu" data-avis="${e.id}" style="background:rgba(255,255,255,.08);color:#fff;border-color:rgba(255,255,255,.2)">${['','Éloges','Félicitations','Compliments','Encouragements','Aucun','Avertissement travail','Avertissement comportement','Avertissement travail et comportement'].map(o=>`<option style="color:#0F172A" ${S.conseil[e.id]===o?'selected':''}>${o}</option>`).join('')}</select>
-<button data-act="fermer" style="margin-left:auto">Fermer</button></div></div>`}
+<button data-act="fermer" style="margin-left:auto">Fermer</button></div></div>`;return screen?html.replace(/<div class="ctrl">[\s\S]*$/,'</div>'):html}
 function startScroll(){cancelAnimationFrame(raf);const st=$('#stage'),inn=$('#inner');if(!st||!inn)return;let y=0,dir=1,wait=90;
  const step=()=>{const over=inn.scrollHeight-st.clientHeight;if(S.auto&&over>0){if(wait>0)wait--;else{y+=dir*0.5;if(y>=over){y=over;dir=-1;wait=120}if(y<=0){y=0;dir=1;wait=120}}inn.style.transform=`translateY(${-y}px)`}else inn.style.transform='';raf=requestAnimationFrame(step)};
  if(!matchMedia('(prefers-reduced-motion: reduce)').matches)step()}
@@ -294,11 +341,199 @@ function bind(){
   else{const v=parseFloat(raw.replace(',','.'));if(isNaN(v)||v<0||v>ev.b){inp.style.borderColor='var(--red)';inp.title=`Note entre 0 et ${ev.b}, ou Abs, Disp, NN, NR`;return}ev.notes[i]=v}
   inp.style.borderColor='';const m=moyMat(S.mat,i),c=$('#moy-'+i);c.textContent=fmt(m);c.className='n '+cls(m);$('#moyc').textContent=fmt(moyClasse(S.mat))});
  const fit=t=>{t.style.height='auto';t.style.height=t.scrollHeight+2+'px'};$('#app').querySelectorAll('[data-appr]').forEach(t=>{fit(t);t.oninput=()=>{fit(t);APPR[t.dataset.appr][+t.dataset.i]=t.value;t.parentNode.querySelector('.small.mute').textContent=t.value.length+'/300'}});
- $('#app').querySelectorAll('[data-avis]').forEach(s=>s.onchange=()=>{S.conseil[+s.dataset.avis]=s.value});
+ $('#app').querySelectorAll('[data-avis]').forEach(s=>s.onchange=()=>{S.conseil[+s.dataset.avis]=s.value;send('state')});
 }
-function bindLayer(){$('#layer').querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>A[b.dataset.act]());$('#layer').querySelectorAll('[data-avis]').forEach(s=>s.onchange=()=>{S.conseil[+s.dataset.avis]=s.value;renderProj()})}
+function bindLayer(){$('#layer').querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>A[b.dataset.act]());$('#layer').querySelectorAll('[data-avis]').forEach(s=>s.onchange=()=>{S.conseil[+s.dataset.avis]=s.value;send('state');renderProj()})}
 addEventListener('keydown',e=>{if(!S.proj)return;if(e.key==='ArrowRight')A.next();if(e.key==='ArrowLeft')A.prev();if(e.key==='Escape')A.fermer()});
-render();
+// ---------- Nouveaux modules ----------
+const isFam=()=>S.role==='parent'||S.role==='eleve';
+const compOk=i=>COMP[i].filter(v=>v>=CFG.cycleNiv).length;
+const rang=i=>E.filter(e=>moyGen(e.id)>moyGen(i)).length+1;
+const pm=()=>S.role==='pp'?'ep':S.role==='dir'?S.mat:'ma';
+const hm=x=>String(Math.floor(x/60)).padStart(2,'0')+':'+String(x%60).padStart(2,'0');
+function logA(t){LOG.unshift({h:now(),t});LOG.length=Math.min(LOG.length,8)}
+const verdict=i=>{const n=compOk(i);return n>=CFG.cycleN?['Cycle validé','']:n===CFG.cycleN-1?['À surveiller','g']:['Pas encore','r']};
+
+// --- Emploi du temps : générateur ---
+function genEDT(){
+ const units=[];CLS.forEach(c=>MATIERES.forEach(m=>{for(let k=0;k<HRS[m.id];k++)units.push({c,m:m.id})}));
+ let best=null;
+ for(let t=0;t<250;t++){
+  const g={},tb={},cd={},td={};
+  const ord=units.map(u=>({u,r:Math.random()})).sort((a,b)=>a.r-b.r).map(x=>x.u);
+  let ok=true;
+  for(const {c,m} of ord){
+   let bs=1e9,bk=null;
+   for(let d=0;d<5;d++)for(let s=0;s<7;s++){
+    if(!okSlot(d,s))continue;
+    const kc=`${c}-${d}-${s}`,kt=`${m}-${d}-${s}`,pref=TP[m][`${d}-${s}`];
+    if(g[kc]||tb[kt]||pref==='c')continue;
+    if((cd[`${c}-${d}-${m}`]||0)>=2||(td[`${m}-${d}`]||0)>=CFG.maxJour)continue;
+    let sc=Math.random()*3+(pref==='p'?6:0);
+    const day=SL.some((_,x)=>g[`${c}-${d}-${x}`]),near=g[`${c}-${d}-${s-1}`]||g[`${c}-${d}-${s+1}`];
+    if(day&&!near)sc+=4;
+    if(sc<bs){bs=sc;bk=[d,s]}
+   }
+   if(!bk){ok=false;break}
+   const [d,s]=bk;g[`${c}-${d}-${s}`]=m;tb[`${m}-${d}-${s}`]=c;
+   cd[`${c}-${d}-${m}`]=(cd[`${c}-${d}-${m}`]||0)+1;td[`${m}-${d}`]=(td[`${m}-${d}`]||0)+1;
+  }
+  if(!ok)continue;
+  let pv=0,gaps=0;
+  for(const k in g){const [c,d,s]=k.split('-');if(TP[g[k]][`${d}-${s}`]==='p')pv++}
+  CLS.forEach(c=>{for(let d=0;d<5;d++){const idx=[];SL.forEach((_,s)=>{if(g[`${c}-${d}-${s}`])idx.push(s)});
+   if(idx.length>1)for(let a=idx[0];a<idx[idx.length-1];a++)if(!g[`${c}-${d}-${a}`])gaps++}});
+  const score=pv*5+gaps*2;
+  if(!best||score<best.score)best={g,tb,pv,gaps,score};
+ }
+ return best}
+const nbMarks=k=>{let n=0;for(const m in TP)for(const x in TP[m]){const [d,s]=x.split('-').map(Number);if(TP[m][x]===k&&okSlot(d,s))n++}return n};
+
+R.edt=()=>{const r=S.role,fam=isFam(),dir=r==='dir',tm=(r==='prof'||r==='pp')?pm():null;
+ const txt=tm?'Indique tes contraintes (obligatoires) et tes souhaits (si possible). Le générateur place d’abord les contraintes, puis le maximum de souhaits.':dir?'Le générateur respecte toutes les contraintes des professeurs, puis place un maximum de souhaits.':'Emploi du temps des classes.';
+ let h=`<div class="row sp"><div><h2>Emploi du temps</h2><p class="mute">${txt}</p></div>${dir?'<button class="primary" data-act="genEDT">Générer l’emploi du temps</button>':''}</div>`;
+ if(tm){const M=MATIERES.find(x=>x.id===tm);
+  h+=`<div class="card" style="margin-top:16px"><b>Mes contraintes et souhaits · ${M.n}</b><p class="small mute">Touche une case pour changer : libre → souhait → indisponible. Maximum ${CFG.maxJour} h par jour (réglé par la direction).</p>
+  <div class="scroll"><table><thead><tr><th></th>${DAYS.map(d=>`<th class="n">${d}</th>`).join('')}</tr></thead><tbody>${SL.map((l,s)=>`<tr><th>${l}</th>${DAYS.map((d,di)=>{if(!okSlot(di,s))return `<td class="n mute">—</td>`;const v=TP[tm][`${di}-${s}`]||'';return `<td class="n"><button class="pcb ${v}" data-act="tp" data-i="${di*10+s}">${v==='p'?'Souhait':v==='c'?'Indispo':'·'}</button></td>`}).join('')}</tr>`).join('')}</tbody></table></div>
+  <p class="small mute">${nbMarks('c')?'':''}Le mercredi après-midi est fermé. Après tes modifications, la direction relance le générateur.</p></div>`}
+ if(dir){h+=`<div class="card" style="margin-top:16px"><b>Contraintes et souhaits des professeurs</b><div class="scroll"><table><thead><tr><th>Matière</th><th>Professeur</th><th class="n">Contraintes</th><th class="n">Souhaits</th><th class="n">Heures / semaine / classe</th></tr></thead><tbody>${MATIERES.map(m=>{const v=Object.entries(TP[m.id]).filter(([k])=>{const [d,s]=k.split('-').map(Number);return okSlot(d,s)});return `<tr><td>${m.n}</td><td>${m.p}</td><td class="n">${v.filter(x=>x[1]==='c').length}</td><td class="n">${v.filter(x=>x[1]==='p').length}</td><td class="n">${HRS[m.id]} h</td></tr>`}).join('')}</tbody></table></div></div>`}
+ if(!EDT)return h+`<div class="card" style="margin-top:16px">Aucun emploi du temps généré pour l’instant.</div>`;
+ const ev=fam?'class:4A':S.ev;const [kind,id]=ev.split(':');
+ const stat=dir||r==='vs'?`<div class="row" style="margin:12px 0"><span class="pill">0 conflit</span><span class="pill">Contraintes : 100 % respectées</span><span class="pill g">Souhaits respectés : ${nbMarks('p')-EDT.pv} / ${nbMarks('p')}</span><span class="pill ${EDT.gaps?'g':''}">${EDT.gaps} trou(s) dans les journées</span></div>`:'';
+ h+=`<div class="card" style="margin-top:16px"><div class="row sp"><b>${fam?'Classe de 4A':'Emploi du temps généré'}</b>${fam?'':`<select id="edv" aria-label="Vue">${CLS.map(c=>`<option value="class:${c}" ${ev==='class:'+c?'selected':''}>Classe ${c}</option>`).join('')}${MATIERES.map(m=>`<option value="prof:${m.id}" ${ev==='prof:'+m.id?'selected':''}>${m.p} · ${m.n}</option>`).join('')}</select>`}</div>${stat}
+ <div class="scroll"><table><thead><tr><th></th>${DAYS.map(d=>`<th>${d}</th>`).join('')}</tr></thead><tbody>${SL.map((l,s)=>{const row=`<tr><th>${l}</th>${DAYS.map((d,di)=>{if(!okSlot(di,s))return '<td></td>';let c='';
+  if(kind==='class'){const m=EDT.g[`${id}-${di}-${s}`];if(m){const M=MATIERES.find(x=>x.id===m);c=`<b>${M.n}</b><div class="small mute">${M.p}</div>${!fam&&TP[m][`${di}-${s}`]==='p'?'<span class="pill g">souhait non respecté</span>':''}`}}
+  else{const cl=EDT.tb[`${id}-${di}-${s}`];if(cl){c=`<b>Classe ${cl}</b>${TP[id][`${di}-${s}`]==='p'?'<div><span class="pill g">souhait non respecté</span></div>':''}`}else if(TP[id][`${di}-${s}`]==='c')c='<span class="pill r">indisponible</span>';else if(TP[id][`${di}-${s}`]==='p')c='<span class="pill">souhait respecté</span>'}
+  return `<td style="white-space:normal;min-width:104px">${c}</td>`}).join('')}</tr>`;return s===3?row+`<tr><td colspan="6" class="small mute" style="text-align:center">Pause méridienne</td></tr>`:row}).join('')}</tbody></table></div></div>`;
+ return h};
+
+// --- Compétences de cycle ---
+R.competences=()=>{const edit=S.role==='pp'||S.role==='dir';const n=E.filter(e=>compOk(e.id)>=CFG.cycleN).length;
+ return `<div class="row sp"><div><h2>Compétences de cycle · 4A</h2><p class="mute">Cycle 4 · socle commun. Cycle validé si au moins ${CFG.cycleN} composantes sur 8 sont au niveau ${CFG.cycleNiv} ou plus (règle réglable par la direction).</p></div><span class="pill ${edit?'':'g'}">${edit?'Saisie ouverte':'Lecture seule'}</span></div>
+<div class="grid" style="margin-top:16px"><div class="card kpi"><b id="cvalid">${n}/${E.length}</b><span>élèves au niveau de validation du cycle</span></div>
+<div class="card"><b>Niveaux</b><div class="small" style="margin-top:8px;display:grid;gap:2px">${NIV.map((x,k)=>`<span><b class="lv${k+1}">${k+1}</b> · ${x}</span>`).join('')}</div></div></div>
+<div class="card tsticky" style="margin-top:16px;padding:8px"><table><thead><tr><th>Élève</th>${SOCLE.map((s,k)=>`<th class="n" title="${esc(s)}">C${k+1}</th>`).join('')}<th>Acquis</th></tr></thead><tbody>${E.map(e=>{const v=verdict(e.id);return `<tr><td>${esc(nom(e))}</td>${SOCLE.map((s,k)=>`<td class="n"><select class="cs lv${COMP[e.id][k]}" data-comp="${e.id}-${k}" aria-label="${esc(nom(e))} ${esc(s)}" ${edit?'':'disabled'}>${[1,2,3,4].map(x=>`<option ${x===COMP[e.id][k]?'selected':''}>${x}</option>`).join('')}</select></td>`).join('')}<td id="cs-${e.id}" style="white-space:nowrap"><b>${compOk(e.id)}/8</b> <span class="pill ${v[1]}">${v[0]}</span></td></tr>`}).join('')}</tbody></table></div>
+<div class="card" style="margin-top:16px"><b>Composantes du socle</b><div class="small" style="margin-top:8px;display:grid;gap:4px">${SOCLE.map((s,k)=>`<span><b>C${k+1}</b> · ${s}</span>`).join('')}</div></div>`};
+
+// --- Réglages direction ---
+const FLD=[['Appel et retards',[['appelDelai','Notification au professeur si l’appel n’est pas validé après (minutes)','number'],['alerteVS','Puis alerte à la vie scolaire après (minutes)','number'],['palier','Palier de retard (minutes)','number']]],
+['Avis du conseil de classe (moyenne générale)',[['enc','Sous cette moyenne : avertissement possible','number'],['proche','Zone « proche du seuil » (points)','number'],['compl','Compliments à partir de','number'],['felic','Félicitations au-dessus de','number'],['felicMin','… et toutes les matières au-dessus de','number'],['eloge','Éloges au-dessus de','number'],['elogeMin','… et toutes les matières au-dessus de','number']]],
+['Cycle (socle commun)',[['cycleN','Composantes à valider (sur 8)','number'],['cycleNiv','Niveau minimum (1 à 4)','number']]],
+['Téléphones',[['telSeuil','Non-dépôts avant sanction','number'],['telHeure','Heure du contrôle de fin de journée','time']]],
+['Emploi du temps',[['maxJour','Heures maximum par jour et par professeur','number']]],
+['Familles et bulletins',[['rang','Afficher le rang sur le bulletin','checkbox'],['publie','Bulletins visibles par les familles','checkbox']]]];
+const ROLES=[['prof','Professeur'],['pp','Professeur principal'],['vs','Vie scolaire'],['dir','Direction'],['gest','Gestionnaire']];
+R.reglages=()=>`<div class="row sp"><div><h2>Réglages de l’établissement</h2><p class="mute">Espace direction. Chaque changement est horodaté dans le journal en bas de page.</p></div><span class="pill g" id="saved">Rien de modifié</span></div>
+${FLD.map(([t,fs])=>`<div class="card" style="margin-top:16px"><b>${t}</b><div style="display:grid;gap:10px;margin-top:10px">${fs.map(([k,l,ty])=>`<label class="row sp small" style="flex-wrap:nowrap"><span>${l}</span>${ty==='checkbox'?`<input type="checkbox" data-cfg="${k}" ${CFG[k]?'checked':''} style="min-height:auto;width:22px;height:22px">`:`<input type="${ty}" step="any" data-cfg="${k}" value="${CFG[k]}" style="width:96px">`}</label>`).join('')}</div></div>`).join('')}
+<div class="card" style="margin-top:16px"><b>Matières et coefficients</b><div style="display:grid;gap:10px;margin-top:10px">${MATIERES.map((m,x)=>`<label class="row sp small" style="flex-wrap:nowrap"><span>${m.n} · ${m.p}</span><input type="number" step="0.5" data-coef="${x}" value="${m.c}" style="width:96px"></label>`).join('')}</div><p class="small mute">Les moyennes, avis et bulletins se recalculent avec les nouveaux coefficients.</p></div>
+<div class="card" style="margin-top:16px"><div class="row sp"><b>Utilisateurs</b><button data-act="inviter">+ Inviter</button></div><div class="scroll"><table><thead><tr><th>Nom</th><th>Rôle</th><th>Actif</th></tr></thead><tbody>${STAFF.map((u,x)=>`<tr><td>${esc(u.n)}</td><td><select data-staff="${x}" aria-label="Rôle ${esc(u.n)}">${ROLES.map(([k,l])=>`<option value="${k}" ${u.r===k?'selected':''}>${l}</option>`).join('')}</select></td><td><input type="checkbox" data-staffa="${x}" ${u.a?'checked':''} style="min-height:auto;width:22px;height:22px"></td></tr>`).join('')}</tbody></table></div><p class="small mute">Le directeur peut aussi être administrateur. Le gestionnaire est au-dessus de tous les rôles.</p></div>
+<div class="card" style="margin-top:16px"><b>Droits d’accès (extrait)</b><div class="scroll"><table><thead><tr><th>Écran</th>${['Prof','Prof. princ.','Vie sco.','Direction','Parent','Élève'].map(x=>`<th class="n">${x}</th>`).join('')}</tr></thead><tbody>${Object.keys(VL).filter(k=>k!=='accueil').map(k=>`<tr><td>${VL[k]}${k==='mavie'?' (famille)':''}</td>${['prof','pp','vs','dir','parent','eleve'].map(r=>`<td class="n">${RV[r].includes(k)?'<b class="hi">✓</b>':'<span class="mute">—</span>'}</td>`).join('')}</tr>`).join('')}</tbody></table></div><p class="small mute">Extrait : la matrice complète (lecture, création, modification, validation, par donnée) sera définie avec la direction.</p></div>
+<div class="card" style="margin-top:16px"><b>Journal des modifications</b><div id="logbox" class="small" style="margin-top:8px;display:grid;gap:4px">${LOG.length?LOG.map(l=>`<span><b>${l.h}</b> · ${esc(l.t)}</span>`).join(''):'<span class="mute">Aucune modification pour l’instant.</span>'}</div></div>`;
+
+// --- Espace pédagogique du professeur ---
+R.pedago=()=>{const m=pm(),M=MATIERES.find(x=>x.id===m),U=UNIT[m],us=PED[m];
+ const all=us.flatMap((u,ui)=>u.s.map((s,si)=>({...s,ui,si,u:u.t})));const done=all.filter(s=>s.done).length;const next=all.filter(s=>!s.done).slice(0,3);const d=S.dup[m];
+ return `<div class="row sp"><div><h2>Mon espace · ${M.n}</h2><p class="mute">${U}s, séances et planning de ta matière. Le même principe que l’appli EPS, adapté à chaque matière.</p></div><div class="row">${S.role==='dir'?`<select id="mat" aria-label="Matière">${MATIERES.map(x=>`<option value="${x.id}" ${x.id===m?'selected':''}>${x.n}</option>`).join('')}</select>`:''}<button class="primary" data-act="addUnit">+ ${U}</button><button data-act="dup">Préparer 2027-2028</button></div></div>
+<div class="grid" style="margin-top:16px"><div class="card kpi"><b>${done}/${all.length}</b><span>séances faites</span></div><div class="card kpi"><b>${us.length}</b><span>${U.toLowerCase()}s</span></div>
+<div class="card"><b>Prochaines séances</b><div class="small" style="margin-top:8px;display:grid;gap:4px">${next.length?next.map(s=>`<span>${esc(s.t)} <span class="mute">· ${esc(s.u)}</span></span>`).join(''):'<span class="mute">Rien de planifié.</span>'}</div></div></div>
+${d?`<div class="banner" style="margin-top:16px">Brouillon 2027-2028 créé à ${d.h} : ${d.u} ${U.toLowerCase()}(s) et ${d.s} séance(s) copiés, à ajuster l’an prochain.</div>`:''}
+${us.length?us.map((u,ui)=>{const dn=u.s.filter(s=>s.done).length;return `<div class="card" style="margin-top:16px"><div class="row sp"><div><b>${U} · ${esc(u.t)}</b><div class="small mute">${esc(u.per)}</div></div><span class="pill">${dn}/${u.s.length}</span></div><div class="prog" style="margin:10px 0"><i style="width:${u.s.length?dn/u.s.length*100:0}%"></i></div>
+${u.s.map((s,si)=>`<div class="sea ${s.done?'done':''}"><div><b>${esc(s.t)}</b><div class="small mute">${esc(s.o)} · ${s.d} min · ${FIELD[m]} : ${esc(s.f)} · <span class="pill">Socle C${s.c}</span></div></div><button data-act="seaDone" data-i="${ui*100+si}">${s.done?'Refaire':'Fait'}</button></div>`).join('')}
+<div style="margin-top:10px"><button data-act="addSea" data-i="${ui}">+ Séance</button></div></div>`}).join(''):`<div class="card" style="margin-top:16px">Aucun ${U.toLowerCase()} pour l’instant. Crée le premier avec le bouton ci-dessus.</div>`}`};
+
+// --- Vie scolaire (vie scolaire et direction) ---
+R.viesco=()=>{const ab=E.filter(e=>S.appel[e.id].st==='absent').length,rt=E.filter(e=>S.appel[e.id].st==='retard').length,so=E.filter(e=>S.appel[e.id].st==='sortie').length,tl=E.filter(e=>S.tels[e.id].st==='depose').length;
+ const base=10*60+5,n1=base+CFG.appelDelai,n2=n1+CFG.alerteVS;
+ const prop=E.filter(e=>ABS[e.id].tel>=CFG.telSeuil&&!PUN.some(p=>p.i===e.id&&p.motif==='Non-dépôt téléphone'));
+ const ev=[{h:'08:02',t:'Appel 4A (Français) validé par Mme Lefèvre'},{h:'08:05',t:'Téléphones 4A : dépôt terminé'}];
+ E.forEach(e=>{const x=S.appel[e.id];if(x.t)ev.push({h:x.t,t:`${nom(e)} : ${x.st==='absent'?'absent':x.st==='retard'?'retard '+x.palier+' min':x.st==='sortie'?'sortie anticipée '+x.sortie:'présent'}`});const t=S.tels[e.id];if(t.ret)ev.push({h:t.ret,t:`${nom(e)} : téléphone rendu`});else if(t.dep&&t.st==='depose')ev.push({h:t.dep,t:`${nom(e)} : téléphone déposé`})});
+ ev.sort((a,b)=>a.h<b.h?-1:1);
+ const top=E.map(e=>{const c=obsCount(e.id);return {e,n:c.n,pos:c.p,pu:PUN.filter(p=>p.i===e.id).length}}).sort((a,b)=>b.n-a.n).slice(0,6);
+ return `<div class="row sp"><div><h2>Vie scolaire · aujourd’hui</h2><p class="mute">Absences, justificatifs, punitions et sanctions, tout est horodaté.</p></div><button class="primary" data-act="newPun">+ Punition ou sanction</button></div>
+<div class="banner" style="margin-top:12px">Appel manquant : 4A, Mathématiques 10h05. Notification envoyée à M. Benali à ${hm(n1)} (${CFG.appelDelai} min). Alerte vie scolaire à ${hm(n2)} (+${CFG.alerteVS} min). <button data-act="relance" style="margin-left:8px;min-height:36px;padding:4px 12px">Relancer le professeur</button></div>
+<div class="grid"><div class="card kpi"><b>${ab}</b><span>absents</span></div><div class="card kpi"><b>${rt}</b><span>retards</span></div><div class="card kpi"><b>${so}</b><span>sorties anticipées</span></div><div class="card kpi"><b>${tl}</b><span>téléphones encore au coffre (contrôle à ${CFG.telHeure})</span></div></div>
+<div class="card" style="margin-top:16px"><b>Justificatifs reçus des familles</b>${JUST.length?JUST.map((j,x)=>`<div class="sea"><div><b>${esc(nom(E[j.i]))}</b><div class="small mute">${j.h} · ${esc(j.motif)}</div></div>${j.st==='valide'?'<span class="pill">Validé</span>':`<button class="teal" data-act="validerJ" data-i="${x}">Valider</button>`}</div>`).join(''):'<p class="small mute">Aucun justificatif pour l’instant. Les familles en envoient depuis leur espace (aperçu : profil Parent).</p>'}</div>
+${prop.length?`<div class="card" style="margin-top:16px"><b>Sanctions proposées</b>${prop.map(e=>`<div class="sea"><div><b>${esc(nom(e))}</b><div class="small mute">${ABS[e.id].tel} non-dépôts de téléphone (seuil : ${CFG.telSeuil})</div></div><button class="teal" data-act="sancTel" data-i="${e.id}">Créer une retenue</button></div>`).join('')}</div>`:''}
+<div class="card" style="margin-top:16px"><b>Punitions et sanctions</b>${PUN.map((p,x)=>`<div class="sea"><div><b>${esc(nom(E[p.i]))}</b> · ${esc(p.type)}<div class="small mute">${p.date} · ${esc(p.motif)} · par ${esc(p.par)}</div></div><button data-act="punToggle" data-i="${x}">${p.st==='faite'?'<span class="hi">Faite</span>':'À faire'}</button></div>`).join('')}</div>
+<div class="card" style="margin-top:16px"><b>Élèves à suivre (observations négatives)</b><div class="scroll"><table><thead><tr><th>Élève</th><th class="n">−</th><th class="n">+</th><th class="n">Punitions</th></tr></thead><tbody>${top.map(t=>`<tr><td>${esc(nom(t.e))}</td><td class="n"><span class="lo">${t.n}</span></td><td class="n">${t.pos}</td><td class="n">${t.pu}</td></tr>`).join('')}</tbody></table></div></div>
+<div class="card" style="margin-top:16px"><b>Fil de la journée</b><div class="small" style="margin-top:8px;display:grid;gap:4px">${ev.slice(-12).map(x=>`<span><b>${x.h}</b> · ${esc(x.t)}</span>`).join('')}</div></div>`};
+
+// --- Espace famille (aperçu phase 2) ---
+R.accueilFam=()=>{const i=FAM,e=E[i],v=verdict(i),who=S.role==='parent'?`famille de ${e.p}`:e.p;
+ return `<div class="row sp"><h2>Bonjour, ${who}</h2><span class="pill g">Aperçu phase 2 · données fictives</span></div>
+<p class="mute">${nom(e)} · classe de 4A · Trimestre 1</p>
+<div class="grid" style="margin-top:16px"><div class="card kpi"><b>${fmt(moyGen(i))}</b><span>moyenne générale</span></div>${CFG.rang?`<div class="card kpi"><b>${rang(i)}/${E.length}</b><span>rang dans la classe</span></div>`:''}<div class="card kpi"><b>${compOk(i)}/8</b><span>composantes du socle acquises · ${v[0]}</span></div><div class="card kpi"><b>${ABS[i].dj}</b><span>demi-journée(s) d’absence</span></div></div>
+<div class="grid" style="margin-top:16px"><a class="card" href="#mesnotes" style="color:inherit;text-decoration:none"><b>Mes notes</b><p class="mute small">Notes par matière, moyennes, compétences du socle.</p></a><a class="card" href="#mavie" style="color:inherit;text-decoration:none"><b>Vie scolaire</b><p class="mute small">Absences, retards, observations, punitions${S.role==='parent'?', justificatifs':''}.</p></a><a class="card" href="#bulletins" style="color:inherit;text-decoration:none"><b>Bulletin</b><p class="mute small">${CFG.publie?'Disponible.':'Pas encore publié par la direction.'}</p></a></div>`};
+R.mesnotes=()=>{const i=FAM,e=E[i];const f=x=>typeof x==='number'?String(x).replace('.',','):x;
+ return `<h2>Mes notes · ${esc(nom(e))}</h2><div class="card tsticky" style="margin-top:16px;padding:8px"><table><thead><tr><th>Matière</th><th>Évaluations</th><th class="n">Moyenne</th><th class="n">Classe</th></tr></thead><tbody>${MATIERES.map(m=>`<tr><td><b>${m.n}</b></td><td style="white-space:normal;min-width:150px">${EVALS[m.id].map(ev=>`${esc(ev.t)} : <b>${f(ev.notes[i])}</b>/${ev.b}`).join('<br>')}</td><td class="n"><b class="${cls(moyMat(m.id,i))}">${fmt(moyMat(m.id,i))}</b></td><td class="n">${fmt(moyClasse(m.id))}</td></tr>`).join('')}<tr><td><b>Général</b></td><td></td><td class="n"><b>${fmt(moyGen(i))}</b></td><td class="n">${fmt(E.reduce((s,x)=>s+moyGen(x.id),0)/E.length)}</td></tr></tbody></table></div>
+<div class="card" style="margin-top:16px"><div class="row sp"><b>Socle commun · cycle 4</b><span class="pill ${verdict(i)[1]}">${verdict(i)[0]} · ${compOk(i)}/8</span></div><div style="display:grid;gap:10px;margin-top:12px">${SOCLE.map((s,k)=>`<div class="small"><div class="row sp" style="flex-wrap:nowrap"><span>${s}</span><b>${NIV[COMP[i][k]-1]}</b></div><div class="prog" style="margin-top:4px"><i style="width:${COMP[i][k]*25}%"></i></div></div>`).join('')}</div></div>`};
+R.mavie=()=>{const i=FAM,e=E[i],o=OBS[i],pu=PUN.filter(p=>p.i===i),ju=JUST.filter(j=>j.i===i);
+ return `<div class="row sp"><h2>Vie scolaire · ${esc(nom(e))}</h2>${S.role==='parent'?'<button class="primary" data-act="justifier">Justifier une absence</button>':''}</div>
+<div class="grid" style="margin-top:16px"><div class="card kpi"><b>${ABS[i].dj}</b><span>demi-journée(s) d’absence</span></div><div class="card kpi"><b>${ABS[i].ret}</b><span>retard(s)</span></div><div class="card kpi"><b>${ABS[i].tel}</b><span>non-dépôt(s) de téléphone</span></div></div>
+${ju.length?`<div class="card" style="margin-top:16px"><b>Justificatifs envoyés</b>${ju.map(j=>`<div class="sea"><div>${esc(j.motif)}<div class="small mute">Envoyé à ${j.h}</div></div><span class="pill ${j.st==='valide'?'':'g'}">${j.st==='valide'?'Validé':'En attente'}</span></div>`).join('')}</div>`:''}
+<div class="card" style="margin-top:16px"><b>Observations</b>${o.length?`<div class="small" style="margin-top:8px;display:grid;gap:4px">${o.map(x=>`<span><b class="${x.pol==='+'?'hi':'lo'}">${x.pol==='+'?'+':'−'}</b> ${esc(x.t)} <span class="mute">· ${esc(x.m)}</span></span>`).join('')}</div>`:'<p class="small mute">Aucune observation.</p>'}</div>
+<div class="card" style="margin-top:16px"><b>Punitions et sanctions</b>${pu.length?pu.map(p=>`<div class="sea"><div>${esc(p.type)}<div class="small mute">${p.date} · ${esc(p.motif)}</div></div><span class="pill ${p.st==='faite'?'':'g'}">${p.st==='faite'?'Faite':'À faire'}</span></div>`).join(''):'<p class="small mute">Aucune.</p>'}</div>`};
+
+// --- Conseil sur deux écrans : pilotage ---
+R.pilotage=()=>{const e=E[S.projI],a=S.conseil[e.id]||avis(e.id).a,c=obsCount(e.id),url=location.origin&&location.origin!=='null'?location.origin+location.pathname+'?ecran=1':'?ecran=1';
+ return `<div class="row sp"><div><h2>Pilotage du conseil · 4A</h2><p class="mute">Tu pilotes ici, l’écran projeté suit en direct. Ouvre-le dans une 2ᵉ fenêtre du même navigateur, puis glisse-la sur le vidéoprojecteur.</p></div><div class="row"><span class="pill r" id="pstat">Écran projeté non connecté</span><button class="primary" data-act="ouvrirEcran">Ouvrir l’écran projeté</button></div></div>
+<p class="small mute" id="pmsg">Adresse de l’écran : ${esc(url)}</p>
+<div class="two" style="margin-top:16px"><div class="card" style="padding:12px"><div style="display:grid;gap:6px;max-height:70vh;overflow:auto">${E.map(x=>`<button class="pj ${x.id===S.projI?'on':''}" data-pj="${x.id}"><span>${esc(nom(x))}</span><span class="small">${fmt(moyGen(x.id))}</span></button>`).join('')}</div></div>
+<div class="card"><div class="row sp"><div><h2 style="font-size:26px">${esc(nom(e))}</h2><div class="small mute">Élève ${S.projI+1} sur ${E.length} · ${c.p} obs. positives · ${c.n} négatives · Absences ${ABS[e.id].dj} · Retards ${ABS[e.id].ret}</div></div><div style="text-align:right"><div class="kpi"><b class="${cls(moyGen(e.id))}">${fmt(moyGen(e.id))}</b></div><div class="small mute">socle ${compOk(e.id)}/8</div></div></div>
+<div class="row" style="margin-top:12px"><button data-act="prev">← Précédent</button><button class="primary" data-act="next">Élève suivant →</button><button data-act="auto">${S.auto?'Pause du défilement':'Défilement auto'}</button></div>
+<label class="small" for="pjavis" style="display:block;margin-top:14px">Avis retenu (proposé : ${esc(avis(e.id).a)})</label><select id="pjavis" data-avis="${e.id}" style="width:100%">${['','Éloges','Félicitations','Compliments','Encouragements','Aucun','Avertissement travail','Avertissement comportement','Avertissement travail et comportement'].map(o=>`<option ${S.conseil[e.id]===o?'selected':''}>${o}</option>`).join('')}</select>
+<label class="small" for="pjtxt" style="display:block;margin-top:14px">Appréciation générale (modifiable en direct, l’écran suit)</label><textarea id="pjtxt" maxlength="300">${esc(APPR.all[e.id]||proposer('all',e.id))}</textarea>
+<div class="small" style="margin-top:12px;display:grid;gap:3px">${MATIERES.map(m=>`<span><b>${m.n}</b> · <span class="${cls(moyMat(m.id,e.id))}">${fmt(moyMat(m.id,e.id))}</span> · ${esc(APPR[m.id][e.id]||'—')}</span>`).join('')}</div></div></div>`};
+
+// ---------- Actions des nouveaux modules ----------
+S.dup={};S.ev='class:4A';S.scr=0;
+Object.assign(A,{
+ genEDT:()=>{EDT=genEDT();logA('Emploi du temps généré');render()},
+ tp:i=>{const m=pm(),k=`${Math.floor(i/10)}-${i%10}`,v=TP[m][k]||'';const n=v===''?'p':v==='p'?'c':'';if(n)TP[m][k]=n;else delete TP[m][k];render()},
+ addUnit:()=>{const m=pm(),U=UNIT[m];dialog(`<h2 style="font-size:22px">Nouveau ${U.toLowerCase()}</h2><label class="small" for="uT">Titre</label><input id="uT" style="width:100%"><label class="small" for="uP" style="display:block;margin-top:8px">Période</label><input id="uP" style="width:100%" value="Janv. – Fév.">`,()=>{const t=$('#uT').value.trim();if(t)PED[m].push({t,per:$('#uP').value,s:[]})})},
+ addSea:ui=>{const m=pm();dialog(`<h2 style="font-size:22px">Nouvelle séance</h2><label class="small" for="sT">Titre</label><input id="sT" style="width:100%"><label class="small" for="sO" style="display:block;margin-top:8px">Objectif</label><input id="sO" style="width:100%"><label class="small" for="sF" style="display:block;margin-top:8px">${FIELD[m]}</label><input id="sF" style="width:100%"><div class="row" style="margin-top:8px"><div><label class="small" for="sD">Durée (min)</label><br><input id="sD" type="number" value="55" style="width:90px"></div><div><label class="small" for="sC">Socle visé</label><br><select id="sC">${SOCLE.map((x,k)=>`<option value="${k+1}">C${k+1}</option>`).join('')}</select></div></div>`,()=>{const t=$('#sT').value.trim();if(t)PED[m][ui].s.push(sea(t,$('#sO').value,+$('#sD').value||55,$('#sF').value,+$('#sC').value,0))})},
+ seaDone:i=>{const m=pm(),s=PED[m][Math.floor(i/100)].s[i%100];s.done=!s.done;render()},
+ dup:()=>{const m=pm();S.dup[m]={h:now(),u:PED[m].length,s:PED[m].reduce((a,u)=>a+u.s.length,0)};logA(`Espace ${MATIERES.find(x=>x.id===m).n} copié pour 2027-2028`);render()},
+ newPun:()=>dialog(`<h2 style="font-size:22px">Punition ou sanction</h2><label class="small" for="pe">Élève</label><select id="pe" style="width:100%">${E.map(e=>`<option value="${e.id}">${esc(nom(e))}</option>`).join('')}</select><div class="chips" data-g="pt">${PTYPES.map((t,k)=>`<button data-v="${t}" class="${k?'':'on'}">${t}</button>`).join('')}</div><label class="small" for="pm">Motif</label><input id="pm" style="width:100%">`,()=>{PUN.unshift({i:+$('#pe').value,type:picked('pt'),motif:$('#pm').value||'—',date:new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}),par:S.role==='dir'?'Direction':'Vie scolaire',st:'afaire'});OBS[+$('#pe').value].push({pol:'-',t:picked('pt'),m:'Vie scolaire'})}),
+ punToggle:x=>{PUN[x].st=PUN[x].st==='faite'?'afaire':'faite';render()},
+ sancTel:i=>{PUN.unshift({i,type:'Retenue',motif:'Non-dépôt téléphone',date:new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}),par:'Vie scolaire',st:'afaire'});logA(`Retenue créée pour ${nom(E[i])}`);render()},
+ relance:()=>{const b=document.querySelector('[data-act=relance]');if(b){b.textContent=`Relance envoyée à ${now()}`;b.disabled=true}},
+ justifier:()=>dialog(`<h2 style="font-size:22px">Justifier une absence</h2><div class="chips" data-g="jm">${['Maladie','Rendez-vous médical','Raison familiale','Autre'].map((t,k)=>`<button data-v="${t}" class="${k?'':'on'}">${t}</button>`).join('')}</div><label class="small" for="jt">Précision (facultatif)</label><textarea id="jt"></textarea><p class="small mute">Envoyé à la vie scolaire à ${now()}, qui le valide.</p>`,()=>{JUST.push({i:FAM,motif:picked('jm')+($('#jt').value?' — '+$('#jt').value:''),h:now(),st:'attente'})}),
+ validerJ:x=>{JUST[x].st='valide';render()},
+ inviter:()=>dialog(`<h2 style="font-size:22px">Inviter un utilisateur</h2><label class="small" for="in">Nom</label><input id="in" style="width:100%"><label class="small" for="ir" style="display:block;margin-top:8px">Rôle</label><select id="ir" style="width:100%">${ROLES.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select>`,()=>{const n=$('#in').value.trim();if(n){STAFF.push({n,r:$('#ir').value,a:true});logA(`Invitation envoyée à ${n}`)}}),
+ pilotage:()=>{location.hash='pilotage'},
+ ouvrirEcran:()=>{let w=null;try{w=window.open(location.pathname+'?ecran=1','lc-ecran')}catch(err){}const m=$('#pmsg');if(m)m.textContent=w?'Écran ouvert. Glisse la fenêtre sur le vidéoprojecteur puis clique « Plein écran ».':'Fenêtre bloquée par le navigateur. Ouvre l’adresse de l’écran dans un nouvel onglet du même navigateur.'},
+ plein:()=>{try{document.documentElement.requestFullscreen()}catch(err){}}
+});
+['next','prev','auto','projeter'].forEach(k=>{const f=A[k];A[k]=(...a)=>{f(...a);send('state');if(view()==='pilotage'&&!S.proj)render()}});
+
+// ---------- Synchronisation des deux écrans ----------
+const IS_SCREEN=new URLSearchParams(location.search).has('ecran');
+let BC=null;try{BC=new BroadcastChannel('lc-conseil')}catch(err){}
+function snap(){return {projI:S.projI,auto:S.auto,conseil:S.conseil,APPR,EV:Object.fromEntries(MATIERES.map(m=>[m.id,EVALS[m.id].map(e=>e.notes)])),OBS,COMP,coef:MATIERES.map(m=>m.c),CFG}}
+function applySnap(s){S.projI=s.projI;S.auto=s.auto;S.conseil=s.conseil;for(const k in s.APPR)APPR[k]=s.APPR[k];MATIERES.forEach((m,x)=>{m.c=s.coef[x];EVALS[m.id].forEach((e,k)=>e.notes=s.EV[m.id][k])});OBS.splice(0,OBS.length,...s.OBS);COMP.splice(0,COMP.length,...s.COMP);Object.assign(CFG,s.CFG)}
+function send(type){try{if(BC)BC.postMessage({type,s:type==='state'?snap():undefined})}catch(err){}}
+let got=false,lastJ='';
+function renderScreen(){$('#layer').innerHTML=got?projHTML(true):`<div class="proj" style="align-items:center;justify-content:center;text-align:center"><div><div class="big" style="font-size:clamp(36px,5vw,64px)">Luqmân Campus</div><p style="font-size:clamp(18px,2vw,26px);opacity:.8">En attente du professeur principal…</p><p class="small" style="opacity:.6">Ouvre « Pilotage du conseil » dans l’autre fenêtre.</p></div></div>`;if(got){startScroll();bindLayer()}}
+function upd(){const el=$('#pstat');if(el){const ok=Date.now()-S.scr<12000;el.textContent=ok?'Écran projeté connecté':'Écran projeté non connecté';el.className='pill '+(ok?'':'r')}}
+if(BC)BC.onmessage=ev=>{const m=ev.data;if(IS_SCREEN){if(m.type==='state'){const j=JSON.stringify(m.s);if(j===lastJ)return;lastJ=j;applySnap(m.s);got=true;renderScreen()}}else if(m.type==='hello'){S.scr=Date.now();send('state');upd()}};
+if(!IS_SCREEN)setInterval(upd,3000);
+
+// ---------- Liaisons des champs ----------
+function bindX(){
+ $('#app').querySelectorAll('[data-comp]').forEach(s=>s.onchange=()=>{const [i,k]=s.dataset.comp.split('-').map(Number);COMP[i][k]=+s.value;s.className='cs lv'+s.value;const v=verdict(i);$('#cs-'+i).innerHTML=`<b>${compOk(i)}/8</b> <span class="pill ${v[1]}">${v[0]}</span>`;$('#cvalid').textContent=E.filter(e=>compOk(e.id)>=CFG.cycleN).length+'/'+E.length});
+ $('#app').querySelectorAll('[data-cfg]').forEach(inp=>inp.onchange=()=>{const k=inp.dataset.cfg;CFG[k]=inp.type==='checkbox'?inp.checked:inp.type==='number'?parseFloat(inp.value):inp.value;logA(`Réglage « ${inp.closest('label').firstChild.textContent} » : ${CFG[k]===true?'oui':CFG[k]===false?'non':CFG[k]}`);saved()});
+ $('#app').querySelectorAll('[data-coef]').forEach(inp=>inp.onchange=()=>{const m=MATIERES[+inp.dataset.coef];m.c=parseFloat(inp.value)||m.c;logA(`Coefficient ${m.n} : ${m.c}`);saved()});
+ $('#app').querySelectorAll('[data-staff]').forEach(s=>s.onchange=()=>{const u=STAFF[+s.dataset.staff];u.r=s.value;logA(`Rôle de ${u.n} : ${ROLES.find(r=>r[0]===u.r)[1]}`);saved()});
+ $('#app').querySelectorAll('[data-staffa]').forEach(c=>c.onchange=()=>{const u=STAFF[+c.dataset.staffa];u.a=c.checked;logA(`${u.n} : ${u.a?'activé':'désactivé'}`);saved()});
+ const ev=$('#edv');if(ev)ev.onchange=()=>{S.ev=ev.value;render()};
+ $('#app').querySelectorAll('[data-pj]').forEach(b=>b.onclick=()=>{S.projI=+b.dataset.pj;send('state');render()});
+ const t=$('#pjtxt');if(t){let d=null;t.oninput=()=>{APPR.all[S.projI]=t.value;clearTimeout(d);d=setTimeout(()=>send('state'),350)}}
+ upd();
+}
+function saved(){const el=$('#saved');if(el){el.textContent='Enregistré à '+now();el.className='pill'}const lb=$('#logbox');if(lb)lb.innerHTML=LOG.map(l=>`<span><b>${l.h}</b> · ${esc(l.t)}</span>`).join('')}
+
+if(IS_SCREEN){document.body.classList.add('ecran');document.title='Luqmân Campus — écran conseil';renderScreen();send('hello');setInterval(()=>send('hello'),4000)}else{EDT=genEDT();render()}
 }
 </script>
 </body>
