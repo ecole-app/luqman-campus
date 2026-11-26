@@ -10,9 +10,11 @@ await db.exec(`
   create function auth.uid() returns uuid language sql stable as
     $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
   create role anon nologin; create role authenticated nologin;
+  grant usage on schema auth to anon, authenticated; grant execute on function auth.uid() to anon, authenticated;
 `);
 await db.exec(readFileSync(new URL('../migrations/0001_fondations.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0002_donnees_etablissement.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../migrations/0003_vie_scolaire.sql', import.meta.url), 'utf8'));
 
 const U = { gest:'00000000-0000-0000-0000-000000000001', dir:'00000000-0000-0000-0000-000000000002',
   prof:'00000000-0000-0000-0000-000000000003', eleve:'00000000-0000-0000-0000-000000000004',
@@ -122,6 +124,90 @@ await test('réimporter le même fichier est refusé (doublons)', async () => {
   const r = await as('dir', `select importer_eleves('${JSON.stringify(bonnes)}'::jsonb) as r`);
   return r.res.rows[0].r.importes === 0 && (await compte()) === avant; });
 
+// ---------- Étape 2 : vie scolaire du quotidien ----------
+U.prof2 = '00000000-0000-0000-0000-000000000007'; U.vs2 = '00000000-0000-0000-0000-000000000008';
+for (const [k, n, r] of [['prof2', 'Autre', 'professeur'], ['vs2', 'Vie', 'vie_scolaire']]) {
+  await db.exec(`insert into auth.users values ('${U[k]}'); insert into profils(id,nom,prenom) values ('${U[k]}','${n}','Test');
+    insert into user_roles(user_id,role) values ('${U[k]}','${r}')`);
+}
+await db.exec(`
+  insert into enseignements(classe_id, matiere_id, professeur_id, coefficient)
+    select c.id, m.id, '${U.prof2}', 1 from classes c, matieres m where c.nom='5e A' and m.code='MATH';
+  create temp table ids as select
+    (select id from classes where nom='5e A') as classe,
+    (select e.id from enseignements e join matieres m on m.id=e.matiere_id join classes c on c.id=e.classe_id where c.nom='5e A' and m.code='EPS' and e.professeur_id='${U.prof}') as ens_prof,
+    (select e.id from enseignements e join matieres m on m.id=e.matiere_id join classes c on c.id=e.classe_id where c.nom='5e A' and m.code='MATH') as ens_prof2;
+  insert into cours(enseignement_id, debut, fin) select ens_prof, now() - interval '12 minutes', now() + interval '43 minutes' from ids;
+  insert into cours(enseignement_id, debut, fin) select ens_prof2, now() - interval '100 minutes', now() - interval '45 minutes' from ids;
+  insert into cours(enseignement_id, debut, fin) select ens_prof2, now() - interval '35 minutes', now() + interval '20 minutes' from ids;
+`);
+const cid = async (min) => (await db.query(`select id from cours where debut::timestamp(0) = (now() - interval '${min} minutes')::timestamp(0) or abs(extract(epoch from (now() - debut))/60 - ${min}) < 1 limit 1`)).rows[0].id;
+const C1 = await cid(12), C2 = await cid(100), C3 = await cid(35);
+const sarah = (await db.query(`select id from eleves where nom='Ferhat' and prenom='Sarah'`)).rows[0].id;
+const adam = (await db.query(`select id from eleves where nom='Amrani' and prenom='Adam'`)).rows[0].id;
+
+await test('le professeur ouvre l’appel de son cours : tous présents par défaut', async () => {
+  const r = await as('prof', `select ouvrir_appel('${C1}') as n`); const p = await db.query(`select count(*)::int n, count(*) filter (where statut='present')::int pr from presences where cours_id='${C1}'`);
+  return r.ok && r.res.rows[0].n === 2 && p.rows[0].n === 2 && p.rows[0].pr === 2; });
+await test('un autre professeur ne peut pas faire l’appel de ce cours', async () => { const r = await as('prof2', `select ouvrir_appel('${C1}')`); return !r.ok; });
+await test('la vie scolaire peut faire l’appel de n’importe quel cours', async () => { const r = await as('vs2', `select ouvrir_appel('${C2}') as n`); return r.ok && r.res.rows[0].n === 2; });
+await test('retard : heure du serveur et arrondi au palier de 5 min (12 min → 15)', async () => {
+  const r = await as('prof', `update presences set statut='retard', heure_evenement='2000-01-01', minutes_retard=1 where cours_id='${C1}' and eleve_id='${sarah}' returning heure_evenement > now() - interval '1 minute' as recent, minutes_retard as m`);
+  return r.ok && r.res.rows[0].recent === true && r.res.rows[0].m === 15; });
+await test('le palier de retard suit le réglage (10 min → 20)', async () => {
+  await as('dir', `update parametres set valeur='10' where cle='retard_palier_min' returning valeur`); 
+  const r = await as('prof', `update presences set statut='retard' where cours_id='${C1}' and eleve_id='${adam}' returning minutes_retard as m`);
+  await as('dir', `update parametres set valeur='5' where cle='retard_palier_min'`); return r.ok && r.res.rows[0].m === 20; });
+await test('le client ne peut pas modifier l’heure sans changer le statut', async () => {
+  await as('prof', `update presences set heure_evenement='2000-01-01', minutes_retard=99, motif='transport' where cours_id='${C1}' and eleve_id='${sarah}'`);
+  const r = await db.query(`select heure_evenement > now() - interval '1 minute' as recent, minutes_retard m, motif from presences where cours_id='${C1}' and eleve_id='${sarah}'`);
+  return r.rows[0].recent === true && r.rows[0].m === 15 && r.rows[0].motif === 'transport'; });
+await test('sortie anticipée : heure serveur, qui autorise, qui récupère', async () => {
+  const r = await as('prof', `update presences set statut='sortie', autorise_par='M. Directeur', recupere_par='Le père' where cours_id='${C1}' and eleve_id='${adam}' returning heure_evenement is not null as h, minutes_retard m, autorise_par a, recupere_par r`);
+  const x = r.res?.rows?.[0]; return r.ok && x.h === true && x.m === null && x.a === 'M. Directeur' && x.r === 'Le père'; });
+await test('une dispense est enregistrée', async () => { const r = await as('prof', `update presences set statut='dispense' where cours_id='${C1}' and eleve_id='${sarah}' returning statut`); return r.ok && r.res.rows[0].statut === 'dispense'; });
+await test('repasser « présent » efface l’heure et les champs de sortie', async () => {
+  const r = await as('prof', `update presences set statut='present' where cours_id='${C1}' and eleve_id='${adam}' returning heure_evenement h, autorise_par a, recupere_par r`);
+  const x = r.res?.rows?.[0]; return r.ok && x.h === null && x.a === null && x.r === null; });
+await test('un autre professeur ne modifie pas les présences de ce cours', async () => { const r = await as('prof2', `update presences set statut='absent' where cours_id='${C1}' returning id`); return !r.ok || r.res.rows.length === 0; });
+await test('un élève voit ses propres présences, pas celles des autres, et ne peut rien modifier', async () => {
+  const a = await as('eleve', 'select eleve_id from presences'); const b = await as('eleve', `update presences set statut='absent' returning id`);
+  return a.ok && a.res.rows.length >= 1 && a.res.rows.every(x => x.eleve_id === sarah) && (!b.ok || b.res.rows.length === 0); });
+await test('le professeur valide l’appel de son cours : heure serveur et totaux', async () => {
+  const r = await as('prof', `select valider_appel('${C1}') as r`); const x = r.res?.rows?.[0]?.r;
+  const a = await db.query(`select valide_a > now() - interval '1 minute' as recent, valide_par from appels where cours_id='${C1}'`);
+  return r.ok && x.dispenses === 1 && x.presents === 1 && a.rows[0].recent === true && a.rows[0].valide_par === U.prof; });
+await test('un autre professeur ne peut pas valider cet appel', async () => { const r = await as('prof2', `select valider_appel('${C1}')`); return !r.ok; });
+await test('appels manquants : alerte professeur à 35 min, alerte vie scolaire à 100 min, rien pour un appel validé', async () => {
+  const r = await as('vs2', `select cours_id, niveau from appels_manquants()`); if (!r.ok) return r.err;
+  const m = Object.fromEntries(r.res.rows.map(x => [x.cours_id, x.niveau]));
+  return m[C3] === 'professeur' && m[C2] === 'vie_scolaire' && !(C1 in m); });
+await test('l’auteur d’une observation est celui du serveur (non falsifiable)', async () => {
+  const r = await as('prof', `insert into observations(eleve_id, cours_id, auteur_id, type, texte) values ('${sarah}','${C1}','${U.dir}','travail','Travail non fait') returning auteur_id`);
+  return r.ok && r.res.rows[0].auteur_id === U.prof; });
+await test('un autre professeur ne modifie ni ne supprime l’observation d’un collègue', async () => {
+  const a = await as('prof2', `update observations set texte='X' returning id`); const b = await as('prof2', `delete from observations returning id`);
+  return (!a.ok || a.res.rows.length === 0) && (!b.ok || b.res.rows.length === 0); });
+await test('un élève ne lit pas les observations', async () => { const r = await as('eleve', 'select * from observations'); return !r.ok || r.res.rows.length === 0; });
+await test('le professeur crée une punition ; un collègue ne la modifie pas, la vie scolaire oui', async () => {
+  const a = await as('prof', `insert into punitions(eleve_id, nature, type, motif, echeance) values ('${sarah}','punition','devoir supplémentaire','Bavardages', current_date + 3) returning id`);
+  const b = await as('prof2', `update punitions set statut='faite' returning id`); const c = await as('vs2', `update punitions set statut='faite' returning statut`);
+  return a.ok && (!b.ok || b.res.rows.length === 0) && c.ok && c.res.rows[0].statut === 'faite'; });
+await test('un élève ne voit pas les punitions', async () => { const r = await as('eleve', 'select * from punitions'); return !r.ok || r.res.rows.length === 0; });
+await test('coffre : la vie scolaire dépose (heure serveur) et restitue ; un professeur ne peut pas', async () => {
+  const a = await as('vs2', `select deposer_telephone('${sarah}', 'B12')`); const b = await as('prof', `select deposer_telephone('${adam}', 'B13')`);
+  const c = await db.query(`select casier, depose_a > now() - interval '1 minute' as recent from coffre_telephone where eleve_id='${sarah}'`);
+  const d = await as('vs2', `select restituer_telephone('${sarah}')`); const e = await db.query(`select restitue_a is not null as r from coffre_telephone where eleve_id='${sarah}'`);
+  return a.ok && !b.ok && c.rows[0].casier === 'B12' && c.rows[0].recent === true && d.ok && e.rows[0].r === true; });
+await test('un professeur ne lit pas le coffre à téléphones', async () => { const r = await as('prof', 'select * from coffre_telephone'); return !r.ok || r.res.rows.length === 0; });
+await test('téléphone non déposé : une observation est créée ; à partir de 3 non-dépôts, sanction à prévoir', async () => {
+  await db.exec(`insert into coffre_telephone(eleve_id, jour, non_depose) values ('${adam}', current_date - 1, true), ('${adam}', current_date - 2, true)`);
+  const r = await as('vs2', `select signaler_non_depot('${adam}') as r`); const x = r.res?.rows?.[0]?.r;
+  const o = await db.query(`select count(*)::int n from observations where eleve_id='${adam}' and type='telephone'`);
+  return r.ok && x.total === 3 && x.seuil === 3 && x.sanction_a_prevoir === true && o.rows[0].n === 1; });
+await test('les changements de présence sont écrits au journal avec leur auteur', async () => {
+  const r = await db.query(`select count(*)::int n from journal_audit where table_nom='presences' and auteur='${U.prof}' and operation='UPDATE'`); return r.rows[0].n >= 4; });
+
 // ---------- Accès libre de test : ouverture puis retrait ----------
 const lire = f => readFileSync(new URL('../dev_only/' + f, import.meta.url), 'utf8');
 await db.exec(`grant usage on schema public to anon`);   // état par défaut de Supabase
@@ -130,7 +216,15 @@ await db.exec(lire('acces_libre.sql'));
 await test('accès libre : un visiteur voit les élèves et peut lancer le contrôle d’import', async () => {
   const a = await as('anon', 'select * from eleves'); const b = await as('anon', `select controler_import_eleves('[{"nom":"A"}]'::jsonb) as r`);
   return a.ok && a.res.rows.length > 0 && b.ok; });
+await test('accès libre : appel, cours fictifs du jour et coffre fonctionnent sans connexion', async () => {
+  const a = await as('anon', 'select dev_creer_cours_du_jour() as n'); const c = await as('anon', 'select id from cours limit 1');
+  const b = await as('anon', `select ouvrir_appel('${c.res?.rows?.[0]?.id}') as n`);
+  const d = await as('anon', `select deposer_telephone('${sarah}', 'C1')`);
+  return a.ok && a.res.rows[0].n > 0 && b.ok && b.res.rows[0].n > 0 && d.ok; });
 await db.exec(lire('retirer_acces_libre.sql'));
+await test('après le retrait : plus d’appel ni de coffre sans connexion, fonction de test supprimée', async () => {
+  const a = await as('anon', 'select * from presences'); const b = await as('anon', `select deposer_telephone('${sarah}', 'C1')`); const c = await as('anon', 'select dev_creer_cours_du_jour()');
+  return (!a.ok || a.res.rows.length === 0) && !b.ok && !c.ok; });
 await test('après le retrait : un visiteur ne voit plus rien et ne peut plus importer', async () => {
   const a = await as('anon', 'select * from eleves'); const b = await as('anon', `select controler_import_eleves('[]'::jsonb)`);
   return (!a.ok || a.res.rows.length === 0) && !b.ok; });
