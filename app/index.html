@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Luqmân Campus · Administration</title>
+<meta name="theme-color" content="#0A2E2A">
+<link rel="icon" href="../icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --vert:#0A2E2A; --or:#D4A017; --sarcelle:#0D9488; --sable:#F6F1E7; --carte:#fff; --texte:#1c2b29; --doux:#5d6b68; --filet:#e4dccb; --rouge:#b3261e; --ok:#1b7a4b; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:'DM Sans',system-ui,sans-serif; background:var(--sable); color:var(--texte); }
+  header { background:var(--vert); color:#fff; padding:12px 16px; display:flex; align-items:center; gap:12px; }
+  header svg { width:36px; height:36px; flex:none; }
+  header h1 { font-family:'Playfair Display',serif; font-size:20px; margin:0; font-weight:700; }
+  header small { display:block; color:#cfe3df; font-size:12px; }
+  .bandeau { background:#fff4d6; color:#6a4e00; border-bottom:2px solid var(--or); padding:8px 16px; font-size:13px; }
+  nav { display:flex; gap:4px; padding:10px 12px 0; overflow-x:auto; background:var(--sable); position:sticky; top:0; z-index:5; border-bottom:1px solid var(--filet); }
+  nav button { border:0; background:transparent; padding:10px 14px; font:inherit; font-weight:500; color:var(--doux); border-bottom:3px solid transparent; cursor:pointer; white-space:nowrap; }
+  nav button.on { color:var(--vert); border-bottom-color:var(--or); font-weight:700; }
+  main { max-width:1000px; margin:0 auto; padding:16px 12px 60px; }
+  .carte { background:var(--carte); border:1px solid var(--filet); border-radius:12px; padding:14px; margin-bottom:14px; }
+  h2 { font-family:'Playfair Display',serif; font-size:19px; margin:0 0 10px; color:var(--vert); }
+  h3 { font-size:15px; margin:0 0 8px; }
+  .barre { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px; }
+  input, select, textarea { font:inherit; padding:8px 10px; border:1px solid #cbbf9f; border-radius:8px; background:#fff; color:var(--texte); }
+  textarea { width:100%; min-height:150px; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:13px; }
+  button.b { font:inherit; font-weight:700; border:0; border-radius:8px; padding:9px 14px; background:var(--sarcelle); color:#fff; cursor:pointer; }
+  button.b.sec { background:#fff; color:var(--vert); border:1px solid var(--vert); }
+  button.b.danger { background:#fff; color:var(--rouge); border:1px solid var(--rouge); padding:5px 9px; font-size:13px; }
+  button.b:disabled { opacity:.5; cursor:default; }
+  .tablewrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--filet); vertical-align:top; }
+  th { color:var(--doux); font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.03em; white-space:nowrap; }
+  td input[type=number] { width:80px; padding:5px 7px; }
+  .msg { padding:10px 12px; border-radius:8px; margin:10px 0; font-size:14px; }
+  .msg.ok { background:#e3f4ea; color:var(--ok); border:1px solid #b6dfc7; }
+  .msg.err { background:#fdeceb; color:var(--rouge); border:1px solid #f1c3bf; }
+  .msg.info { background:#eef5f4; color:#215a55; border:1px solid #cde3df; }
+  .doux { color:var(--doux); font-size:13px; }
+  .pastille { display:inline-block; background:#fdeceb; color:var(--rouge); border-radius:999px; padding:1px 8px; font-size:12px; margin:1px 3px 1px 0; }
+  .ligne-err td { background:#fff8f7; }
+  code { background:#f1ecdf; padding:1px 5px; border-radius:4px; font-size:12.5px; }
+</style>
+</head>
+<body>
+<header>
+  <svg viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="22" fill="#0A2E2A"/><g fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"><path d="M72 30 A28 28 0 1 0 72 70"/><path d="M42 32 V64 H62"/></g><polygon points="77,14.5 81.5,19 77,23.5 72.5,19" fill="#D4A017"/></svg>
+  <div><h1>Luqmân Campus</h1><small>Administration · données de l'établissement</small></div>
+</header>
+<div id="bandeau" class="bandeau" hidden><strong>Mode test :</strong> accès libre, données fictives uniquement. N'entrez aucune vraie donnée d'élève. Ce mode sera retiré avant la mise en service.</div>
+<nav id="nav"></nav>
+<main id="vue"><p class="doux">Chargement…</p></main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script>
+const sb = supabase.createClient(window.LC.url, window.LC.key, { auth: { persistSession: false } });
+if (window.LC.modeTest) document.getElementById('bandeau').hidden = false;
+
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fr = iso => iso ? iso.split('-').reverse().join('/') : '';
+const S = { classes: [], eleves: [], matieres: [], ens: [], annee: null, tab: 'eleves', filtreClasse: '', recherche: '', ensClasse: '', csv: '', apercu: null, message: null };
+const ONGLETS = [['eleves', 'Élèves'], ['classes', 'Classes'], ['matieres', 'Matières et coefficients'], ['import', 'Import CSV'], ['export', 'Export']];
+
+async function charger() {
+  const [c, e, m, n, a] = await Promise.all([
+    sb.from('classes').select('id,niveau,nom').order('nom'),
+    sb.from('eleves').select('id,nom,prenom,date_naissance,ine,classe_id').is('deleted_at', null).order('nom').order('prenom'),
+    sb.from('matieres').select('id,code,nom').order('nom'),
+    sb.from('enseignements').select('id,classe_id,matiere_id,coefficient,heures_hebdo'),
+    sb.from('annees_scolaires').select('id,libelle').eq('active', true).maybeSingle()
+  ]);
+  const erreur = [c, e, m, n, a].find(r => r.error);
+  if (erreur) { $('#vue').innerHTML = `<div class="msg err">Impossible de lire la base : ${esc(erreur.error.message)}</div>`; return false; }
+  S.classes = c.data; S.eleves = e.data; S.matieres = m.data; S.ens = n.data; S.annee = a.data;
+  return true;
+}
+const nomClasse = id => (S.classes.find(c => c.id === id) || {}).nom || '—';
+const nomMatiere = id => (S.matieres.find(m => m.id === id) || {}).nom || '—';
+const msg = () => S.message ? `<div class="msg ${S.message.t}">${esc(S.message.m)}</div>` : '';
+const dire = (t, m) => { S.message = { t, m }; };
+
+function dessinerNav() {
+  $('#nav').innerHTML = ONGLETS.map(([k, l]) => `<button data-k="${k}" class="${S.tab === k ? 'on' : ''}">${l}</button>`).join('');
+  $('#nav').querySelectorAll('button').forEach(b => b.onclick = () => { S.tab = b.dataset.k; S.message = null; dessiner(); });
+}
+function dessiner() { dessinerNav(); $('#vue').innerHTML = VUES[S.tab](); LIENS[S.tab] && LIENS[S.tab](); }
+
+// ---------- Élèves ----------
+function vueEleves() {
+  const q = S.recherche.toLowerCase();
+  const liste = S.eleves.filter(e => (!S.filtreClasse || e.classe_id === S.filtreClasse) && (!q || (e.nom + ' ' + e.prenom).toLowerCase().includes(q)));
+  const opts = S.classes.map(c => `<option value="${c.id}" ${S.filtreClasse === c.id ? 'selected' : ''}>${esc(c.nom)}</option>`).join('');
+  return `${msg()}<div class="carte"><h2>Élèves (${liste.length})</h2>
+    <div class="barre"><select id="fClasse"><option value="">Toutes les classes</option>${opts}</select>
+    <input id="fRech" type="search" placeholder="Rechercher un nom" value="${esc(S.recherche)}"></div>
+    <div class="tablewrap"><table><thead><tr><th>Nom</th><th>Prénom</th><th>Naissance</th><th>INE</th><th>Classe</th><th></th></tr></thead><tbody>
+    ${liste.map(e => `<tr><td>${esc(e.nom)}</td><td>${esc(e.prenom)}</td><td>${fr(e.date_naissance)}</td><td>${esc(e.ine || '')}</td><td>${esc(nomClasse(e.classe_id))}</td><td><button class="b danger" data-ret="${e.id}">Retirer</button></td></tr>`).join('') || '<tr><td colspan="6" class="doux">Aucun élève.</td></tr>'}
+    </tbody></table></div></div>
+    <div class="carte"><h3>Ajouter un élève</h3><div class="barre">
+      <input id="aNom" placeholder="Nom"><input id="aPrenom" placeholder="Prénom"><input id="aNais" type="date"><input id="aIne" placeholder="INE (11 caractères, facultatif)" maxlength="11">
+      <select id="aClasse">${opts}</select><button class="b" id="aOk">Ajouter</button></div></div>`;
+}
+function liensEleves() {
+  $('#fClasse').onchange = e => { S.filtreClasse = e.target.value; dessiner(); };
+  $('#fRech').oninput = e => { S.recherche = e.target.value; const p = e.target.selectionStart; dessiner(); const r = $('#fRech'); r.focus(); r.setSelectionRange(p, p); };
+  document.querySelectorAll('[data-ret]').forEach(b => b.onclick = async () => {
+    const { error } = await sb.from('eleves').update({ deleted_at: new Date().toISOString() }).eq('id', b.dataset.ret);
+    error ? dire('err', error.message) : dire('ok', 'Élève retiré de la liste.'); await charger(); dessiner();
+  });
+  $('#aOk').onclick = async () => {
+    const ine = $('#aIne').value.trim().toUpperCase();
+    const ligne = { nom: $('#aNom').value.trim(), prenom: $('#aPrenom').value.trim(), date_naissance: $('#aNais').value, classe_id: $('#aClasse').value, ine: ine || null };
+    if (!ligne.nom || !ligne.prenom || !ligne.date_naissance) { dire('err', 'Nom, prénom et date de naissance sont obligatoires.'); return dessiner(); }
+    const { error } = await sb.from('eleves').insert(ligne);
+    error ? dire('err', error.message) : dire('ok', `${ligne.prenom} ${ligne.nom} ajouté(e).`); await charger(); dessiner();
+  };
+}
+
+// ---------- Classes ----------
+function vueClasses() {
+  return `${msg()}<div class="carte"><h2>Classes · ${esc(S.annee ? S.annee.libelle : 'aucune année active')}</h2>
+    <div class="tablewrap"><table><thead><tr><th>Classe</th><th>Niveau</th><th>Élèves</th></tr></thead><tbody>
+    ${S.classes.map(c => `<tr><td>${esc(c.nom)}</td><td>${esc(c.niveau)}</td><td>${S.eleves.filter(e => e.classe_id === c.id).length}</td></tr>`).join('')}
+    </tbody></table></div></div>
+    <div class="carte"><h3>Créer une classe</h3><div class="barre">
+      <select id="cNiv"><option>6e</option><option>5e</option><option>4e</option><option>3e</option></select>
+      <input id="cNom" placeholder="Nom, ex. 5e B"><button class="b" id="cOk">Créer</button></div></div>`;
+}
+function liensClasses() {
+  $('#cOk').onclick = async () => {
+    const nom = $('#cNom').value.trim();
+    if (!nom || !S.annee) { dire('err', S.annee ? 'Indiquez un nom de classe.' : 'Aucune année scolaire active.'); return dessiner(); }
+    const { error } = await sb.from('classes').insert({ annee_id: S.annee.id, niveau: $('#cNiv').value, nom });
+    error ? dire('err', error.message) : dire('ok', `Classe ${nom} créée.`); await charger(); dessiner();
+  };
+}
+
+// ---------- Matières et coefficients ----------
+function vueMatieres() {
+  const cl = S.ensClasse || (S.classes[0] && S.classes[0].id) || '';
+  const lignes = S.ens.filter(x => x.classe_id === cl).sort((a, b) => nomMatiere(a.matiere_id).localeCompare(nomMatiere(b.matiere_id), 'fr'));
+  return `${msg()}<div class="carte"><h2>Coefficients par classe</h2>
+    <div class="barre"><select id="eClasse">${S.classes.map(c => `<option value="${c.id}" ${c.id === cl ? 'selected' : ''}>${esc(c.nom)}</option>`).join('')}</select></div>
+    <div class="tablewrap"><table><thead><tr><th>Matière</th><th>Coefficient</th><th>Heures / semaine</th></tr></thead><tbody>
+    ${lignes.map(x => `<tr><td>${esc(nomMatiere(x.matiere_id))}</td>
+      <td><input type="number" min="0.5" step="0.5" value="${x.coefficient}" data-e="${x.id}" data-c="coefficient"></td>
+      <td><input type="number" min="0.5" step="0.5" value="${x.heures_hebdo ?? ''}" data-e="${x.id}" data-c="heures_hebdo"></td></tr>`).join('') || '<tr><td colspan="3" class="doux">Aucune matière pour cette classe.</td></tr>'}
+    </tbody></table></div><p class="doux">La valeur est enregistrée dès que vous quittez la case.</p></div>
+    <div class="carte"><h3>Matières (${S.matieres.length})</h3><p class="doux">${S.matieres.map(m => `<code>${esc(m.code)}</code> ${esc(m.nom)}`).join(' · ')}</p>
+    <div class="barre"><input id="mCode" placeholder="Code, ex. TECH" maxlength="8"><input id="mNom" placeholder="Nom de la matière"><button class="b" id="mOk">Ajouter la matière</button></div>
+    <p class="doux">Une nouvelle matière est ajoutée à toutes les classes avec le coefficient 1.</p></div>`;
+}
+function liensMatieres() {
+  $('#eClasse').onchange = e => { S.ensClasse = e.target.value; dessiner(); };
+  document.querySelectorAll('input[data-e]').forEach(i => i.onchange = async () => {
+    const v = i.value === '' ? null : Number(i.value);
+    if (i.dataset.c === 'coefficient' && !(v > 0)) { dire('err', 'Le coefficient doit être supérieur à 0.'); await charger(); return dessiner(); }
+    const { error } = await sb.from('enseignements').update({ [i.dataset.c]: v }).eq('id', i.dataset.e);
+    error ? dire('err', error.message) : dire('ok', 'Enregistré.'); await charger(); dessiner();
+  });
+  $('#mOk').onclick = async () => {
+    const code = $('#mCode').value.trim().toUpperCase(), nom = $('#mNom').value.trim();
+    if (!code || !nom) { dire('err', 'Code et nom sont obligatoires.'); return dessiner(); }
+    const a = await sb.from('matieres').insert({ code, nom }).select('id').single();
+    if (a.error) { dire('err', a.error.message); return dessiner(); }
+    const b = await sb.from('enseignements').insert(S.classes.map(c => ({ classe_id: c.id, matiere_id: a.data.id, coefficient: 1 })));
+    b.error ? dire('err', b.error.message) : dire('ok', `Matière ${nom} ajoutée à ${S.classes.length} classes.`); await charger(); dessiner();
+  };
+}
+
+// ---------- Import CSV ----------
+const norm = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+const CHAMPS = { nom: 'nom', prenom: 'prenom', naissance: 'naissance', datenaissance: 'naissance', nele: 'naissance', nelele: 'naissance', ine: 'ine', classe: 'classe' };
+function lireCSV(texte) {
+  const t = texte.replace(/^﻿/, '').replace(/\r\n?/g, '\n').trim();
+  if (!t) return [];
+  const premiere = t.split('\n')[0];
+  const sep = [';', '\t', ','].map(c => [c, premiere.split(c).length]).sort((a, b) => b[1] - a[1])[0][0];
+  const lignes = []; let cur = [], cell = '', q = false;
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i];
+    if (q) { if (ch === '"' && t[i + 1] === '"') { cell += '"'; i++; } else if (ch === '"') q = false; else cell += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === sep) { cur.push(cell); cell = ''; }
+    else if (ch === '\n') { cur.push(cell); lignes.push(cur); cur = []; cell = ''; }
+    else cell += ch;
+  }
+  cur.push(cell); lignes.push(cur);
+  const entetes = lignes[0].map(h => CHAMPS[norm(h)] || null);
+  return lignes.slice(1).filter(l => l.some(c => c.trim())).map(l => {
+    const o = {}; entetes.forEach((h, i) => { if (h) o[h] = (l[i] || '').trim(); });
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(o.naissance || '')) o.naissance = o.naissance.split('/').reverse().join('-');
+    return o;
+  });
+}
+function vueImport() {
+  const a = S.apercu;
+  let bloc = '';
+  if (a && a.erreurSysteme) bloc = `<div class="msg err">${esc(a.erreurSysteme)}</div>`;
+  else if (a) {
+    const parLigne = {}; (a.res.erreurs || []).forEach(e => (parLigne[e.ligne] = parLigne[e.ligne] || []).push(e));
+    const nbErr = Object.keys(parLigne).length;
+    if (a.res.ok) bloc = `<div class="msg ok"><strong>${a.res.nb} lignes valides.</strong> Rien n'est encore enregistré.</div><button class="b" id="iGo">Importer ${a.res.nb} élèves</button>`;
+    else bloc = `<div class="msg err"><strong>${nbErr} ligne(s) à corriger</strong> sur ${a.res.nb}. Rien n'est enregistré : corrigez le texte ci-dessus puis cliquez de nouveau sur « Vérifier ».</div>
+      <div class="tablewrap"><table><thead><tr><th>Ligne</th><th>Contenu</th><th>Problème</th></tr></thead><tbody>
+      ${Object.keys(parLigne).map(n => { const l = a.lignes[n - 1] || {}; return `<tr class="ligne-err"><td>${n}</td><td>${esc([l.nom, l.prenom, l.naissance, l.classe].filter(Boolean).join(' · ') || '(ligne vide)')}</td><td>${parLigne[n].map(e => `<span class="pastille">${esc(e.message)}</span>`).join('')}</td></tr>`; }).join('')}
+      </tbody></table></div>`;
+  }
+  return `${msg()}<div class="carte"><h2>Importer des élèves</h2>
+    <p class="doux">Collez le contenu du fichier CSV (ou choisissez le fichier). Colonnes reconnues : <code>nom</code>, <code>prenom</code>, <code>naissance</code> (AAAA-MM-JJ ou JJ/MM/AAAA), <code>ine</code> (facultatif), <code>classe</code>. La ligne 1 est l'en-tête ; les numéros de ligne ci-dessous comptent à partir de la ligne 2.</p>
+    <div class="barre"><input type="file" id="iFic" accept=".csv,.txt,text/csv,text/plain"></div>
+    <textarea id="iTxt" placeholder="nom;prenom;naissance;ine;classe&#10;Benali;Adam;02/04/2014;;6e A">${esc(S.csv)}</textarea>
+    <div class="barre" style="margin-top:10px"><button class="b" id="iCheck">Vérifier</button></div>${bloc}</div>`;
+}
+function liensImport() {
+  $('#iTxt').oninput = e => { S.csv = e.target.value; S.apercu = null; };
+  $('#iFic').onchange = async e => { const f = e.target.files[0]; if (f) { S.csv = await f.text(); S.apercu = null; dessiner(); } };
+  $('#iCheck').onclick = async () => {
+    S.csv = $('#iTxt').value; const lignes = lireCSV(S.csv);
+    if (!lignes.length) { S.apercu = { erreurSysteme: 'Aucune ligne à vérifier : collez le contenu du CSV avec sa ligne d\'en-tête.' }; return dessiner(); }
+    const { data, error } = await sb.rpc('controler_import_eleves', { lignes });
+    S.apercu = error ? { erreurSysteme: error.message } : { res: data, lignes }; dessiner();
+  };
+  const go = $('#iGo');
+  if (go) go.onclick = async () => {
+    go.disabled = true;
+    const { data, error } = await sb.rpc('importer_eleves', { lignes: S.apercu.lignes });
+    if (error) { S.apercu = { erreurSysteme: error.message }; return dessiner(); }
+    if (data.importes > 0) { dire('ok', `${data.importes} élèves importés.`); S.csv = ''; S.apercu = null; await charger(); S.tab = 'eleves'; }
+    else S.apercu = { res: data, lignes: S.apercu.lignes };
+    dessiner();
+  };
+}
+
+// ---------- Export ----------
+function vueExport() {
+  return `<div class="carte"><h2>Export</h2><p class="doux">Fichier CSV de tous les élèves actuels (colonnes : nom, prenom, naissance, ine, classe), réutilisable pour un import.</p>
+    <button class="b" id="xGo">Télécharger les élèves (${S.eleves.length})</button></div>`;
+}
+function liensExport() {
+  $('#xGo').onclick = () => {
+    const cel = v => { v = String(v ?? ''); return /[;"\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    const csv = ['nom;prenom;naissance;ine;classe', ...S.eleves.map(e => [e.nom, e.prenom, e.date_naissance, e.ine || '', nomClasse(e.classe_id)].map(cel).join(';'))].join('\r\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = 'eleves.csv'; a.click(); URL.revokeObjectURL(a.href);
+  };
+}
+
+const VUES = { eleves: vueEleves, classes: vueClasses, matieres: vueMatieres, import: vueImport, export: vueExport };
+const LIENS = { eleves: liensEleves, classes: liensClasses, matieres: liensMatieres, import: liensImport, export: liensExport };
+window.__LC = { S, lireCSV, dessiner };
+charger().then(ok => ok && dessiner());
+</script>
+</body>
+</html>

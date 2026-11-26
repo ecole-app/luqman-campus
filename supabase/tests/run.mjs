@@ -122,5 +122,22 @@ await test('réimporter le même fichier est refusé (doublons)', async () => {
   const r = await as('dir', `select importer_eleves('${JSON.stringify(bonnes)}'::jsonb) as r`);
   return r.res.rows[0].r.importes === 0 && (await compte()) === avant; });
 
+// ---------- Accès libre de test : ouverture puis retrait ----------
+const lire = f => readFileSync(new URL('../dev_only/' + f, import.meta.url), 'utf8');
+await db.exec(`grant usage on schema public to anon`);   // état par défaut de Supabase
+await test('avant l’accès libre, un visiteur ne voit aucun élève', async () => { const r = await as('anon', 'select * from eleves'); return !r.ok || r.res.rows.length === 0; });
+await db.exec(lire('acces_libre.sql'));
+await test('accès libre : un visiteur voit les élèves et peut lancer le contrôle d’import', async () => {
+  const a = await as('anon', 'select * from eleves'); const b = await as('anon', `select controler_import_eleves('[{"nom":"A"}]'::jsonb) as r`);
+  return a.ok && a.res.rows.length > 0 && b.ok; });
+await db.exec(lire('retirer_acces_libre.sql'));
+await test('après le retrait : un visiteur ne voit plus rien et ne peut plus importer', async () => {
+  const a = await as('anon', 'select * from eleves'); const b = await as('anon', `select controler_import_eleves('[]'::jsonb)`);
+  return (!a.ok || a.res.rows.length === 0) && !b.ok; });
+await test('après le retrait : les droits par rôle sont revenus (professeur, élève)', async () => {
+  const a = await as('prof', `update eleves set nom='X' returning id`); const b = await as('eleve', 'select nom from eleves');
+  const c = await as('dir', 'select count(*)::int as n from eleves');
+  return (!a.ok || a.res.rows.length === 0) && b.ok && b.res.rows.length === 1 && c.ok && c.res.rows[0].n > 0; });
+
 console.log(`\n${n - fails}/${n} tests réussis`);
 process.exit(fails ? 1 : 0);
