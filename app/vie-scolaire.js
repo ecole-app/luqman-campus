@@ -184,7 +184,7 @@
   function vuePun() {
     const optsE = S.eleves.map(e => `<option value="${e.id}">${esc(nomEleve(e))} (${esc(nomClasse(e.classe_id))})</option>`).join('');
     const lp = V.punitions.map(p => { const e = eleveParId(p.eleve_id);
-      return `<tr><td>${jourFr(p.created_at)}</td><td>${e ? esc(nomEleve(e)) : '—'}</td><td>${p.nature === 'sanction' ? '<span class="tag err">Sanction</span>' : 'Punition'} · ${esc(p.type)}</td><td>${esc(p.motif)}</td><td>${p.echeance ? fr(p.echeance) : ''}</td>
+      return `<tr><td>${jourFr(p.created_at)}</td><td>${e ? esc(nomEleve(e)) : '—'}</td><td>${p.nature === 'sanction' ? '<span class="tag err">Sanction</span>' : 'Punition'} · ${esc(p.type)}${p.duree_heures ? ' · ' + String(Number(p.duree_heures)).replace('.', ',') + ' h' : ''}</td><td>${esc(p.motif)}</td><td>${p.echeance ? fr(p.echeance) : ''}</td>
       <td><select data-pst="${p.id}">${[['a_faire', 'À faire'], ['faite', 'Faite'], ['annulee', 'Annulée']].map(([k, l]) => `<option value="${k}" ${p.statut === k ? 'selected' : ''}>${l}</option>`).join('')}</select></td></tr>`; }).join('');
     const lo = V.obs.map(o => { const e = eleveParId(o.eleve_id);
       return `<tr><td>${jourFr(o.created_at)}</td><td>${e ? esc(nomEleve(e)) : '—'}</td><td>${esc((TYPES_OBS.find(t => t[0] === o.type) || [])[1] || o.type)}</td><td>${esc(o.texte)}</td></tr>`; }).join('');
@@ -192,14 +192,22 @@
       <select id="p-eleve" style="max-width:260px"><option value="">Élève…</option>${optsE}</select>
       <select id="p-nature"><option value="punition">Punition</option><option value="sanction">Sanction</option></select>
       <input id="p-type" placeholder="Type (retenue, devoir…)" list="p-types"><datalist id="p-types"><option>Devoir supplémentaire</option><option>Retenue</option><option>Avertissement</option><option>Exclusion de cours</option></datalist>
-      <input id="p-motif" placeholder="Motif" style="flex:1;min-width:160px"><input id="p-ech" type="date"><button class="b" id="p-ajout">Ajouter</button></div></div>
+      <input id="p-duree" type="number" min="0.5" step="0.5" placeholder="Heures" style="width:90px;display:none" title="Nombre d'heures de retenue"><input id="p-motif" placeholder="Motif" style="flex:1;min-width:160px"><input id="p-ech" type="date"><button class="b" id="p-ajout">Ajouter</button></div></div>
       <div class="carte"><h2>Punitions et sanctions</h2>${lp ? `<div class="tablewrap"><table><tr><th>Date</th><th>Élève</th><th>Nature</th><th>Motif</th><th>Échéance</th><th>Statut</th></tr>${lp}</table></div>` : '<p class="doux">Aucune pour l’instant.</p>'}</div>
       <div class="carte"><h2>Dernières observations</h2>${lo ? `<div class="tablewrap"><table><tr><th>Date</th><th>Élève</th><th>Type</th><th>Observation</th></tr>${lo}</table></div>` : '<p class="doux">Aucune pour l’instant.</p>'}</div>`;
   }
   function liensPun() {
+    const typeIn = $('#p-type'), dureeIn = $('#p-duree');
+    const montrer = () => { dureeIn.style.display = /retenue/i.test(typeIn.value) ? '' : 'none'; };
+    typeIn.oninput = montrer; typeIn.onchange = montrer; montrer();
     $('#p-ajout').onclick = async () => {
       const row = { eleve_id: $('#p-eleve').value, nature: $('#p-nature').value, type: $('#p-type').value.trim(), motif: $('#p-motif').value.trim(), echeance: $('#p-ech').value || null };
       if (!row.eleve_id || !row.type || !row.motif) { dire('err', 'Choisis un élève, un type et un motif.'); return refaire(); }
+      if (/retenue/i.test(row.type)) {
+        const h = parseFloat($('#p-duree').value.replace(',', '.'));
+        if (!(h > 0)) { dire('err', 'Pour une retenue, indique le nombre d’heures.'); return refaire(); }
+        row.duree_heures = h;
+      }
       const r = await sb.from('punitions').insert(row); dire(r.error ? 'err' : 'ok', r.error ? r.error.message : 'Ajoutée.'); await chargerPun(); refaire();
     };
     document.querySelectorAll('[data-pst]').forEach(s => s.onchange = async () => { const r = await sb.from('punitions').update({ statut: s.value }).eq('id', s.dataset.pst); if (r.error) dire('err', r.error.message); await chargerPun(); refaire(); });

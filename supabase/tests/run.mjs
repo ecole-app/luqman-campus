@@ -182,6 +182,8 @@ await test('appels manquants : alerte professeur à 35 min, alerte vie scolaire 
   const r = await as('vs2', `select cours_id, niveau from appels_manquants()`); if (!r.ok) return r.err;
   const m = Object.fromEntries(r.res.rows.map(x => [x.cours_id, x.niveau]));
   return m[C3] === 'professeur' && m[C2] === 'vie_scolaire' && !(C1 in m); });
+await test('un élève ne voit pas les appels manquants', async () => { const r = await as('eleve', 'select * from appels_manquants()'); return !r.ok || r.res.rows.length === 0; });
+await test('un professeur voit les appels manquants (lecture des réglages incluse)', async () => { const r = await as('prof', 'select * from appels_manquants()'); return r.ok && r.res.rows.length >= 1; });
 await test('l’auteur d’une observation est celui du serveur (non falsifiable)', async () => {
   const r = await as('prof', `insert into observations(eleve_id, cours_id, auteur_id, type, texte) values ('${sarah}','${C1}','${U.dir}','travail','Travail non fait') returning auteur_id`);
   return r.ok && r.res.rows[0].auteur_id === U.prof; });
@@ -193,6 +195,10 @@ await test('le professeur crée une punition ; un collègue ne la modifie pas, l
   const a = await as('prof', `insert into punitions(eleve_id, nature, type, motif, echeance) values ('${sarah}','punition','devoir supplémentaire','Bavardages', current_date + 3) returning id`);
   const b = await as('prof2', `update punitions set statut='faite' returning id`); const c = await as('vs2', `update punitions set statut='faite' returning statut`);
   return a.ok && (!b.ok || b.res.rows.length === 0) && c.ok && c.res.rows[0].statut === 'faite'; });
+await test('une retenue enregistre son nombre d’heures (0 refusé)', async () => {
+  const a = await as('prof', `insert into punitions(eleve_id, type, motif, duree_heures) values ('${sarah}','Retenue','Oubli répété', 2) returning duree_heures`);
+  const b = await as('prof', `insert into punitions(eleve_id, type, motif, duree_heures) values ('${sarah}','Retenue','x', 0)`);
+  return a.ok && Number(a.res.rows[0].duree_heures) === 2 && !b.ok; });
 await test('un élève ne voit pas les punitions', async () => { const r = await as('eleve', 'select * from punitions'); return !r.ok || r.res.rows.length === 0; });
 await test('coffre : la vie scolaire dépose (heure serveur) et restitue ; un professeur ne peut pas', async () => {
   const a = await as('vs2', `select deposer_telephone('${sarah}', 'B12')`); const b = await as('prof', `select deposer_telephone('${adam}', 'B13')`);
@@ -220,7 +226,9 @@ await test('accès libre : appel, cours fictifs du jour et coffre fonctionnent s
   const a = await as('anon', 'select dev_creer_cours_du_jour() as n'); const c = await as('anon', 'select id from cours limit 1');
   const b = await as('anon', `select ouvrir_appel('${c.res?.rows?.[0]?.id}') as n`);
   const d = await as('anon', `select deposer_telephone('${sarah}', 'C1')`);
-  return a.ok && a.res.rows[0].n > 0 && b.ok && b.res.rows[0].n > 0 && d.ok; });
+  const e = await as('anon', `update presences set statut='absent' where cours_id='${c.res?.rows?.[0]?.id}' and eleve_id='${adam}' returning statut`);
+  const f = await as('anon', `insert into observations(eleve_id,type,texte) values ('${adam}','autre','test libre') returning id`);
+  return a.ok && a.res.rows[0].n > 0 && b.ok && b.res.rows[0].n > 0 && d.ok && e.ok && e.res.rows.length === 1 && f.ok; });
 await db.exec(lire('retirer_acces_libre.sql'));
 await test('après le retrait : plus d’appel ni de coffre sans connexion, fonction de test supprimée', async () => {
   const a = await as('anon', 'select * from presences'); const b = await as('anon', `select deposer_telephone('${sarah}', 'C1')`); const c = await as('anon', 'select dev_creer_cours_du_jour()');

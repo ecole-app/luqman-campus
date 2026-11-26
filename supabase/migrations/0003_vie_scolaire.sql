@@ -84,6 +84,7 @@ create table public.punitions (
   nature text not null default 'punition' check (nature in ('punition','sanction')),
   type text not null,                                -- ex. retenue, devoir supplémentaire, avertissement
   motif text not null check (length(btrim(motif)) > 0),
+  duree_heures numeric(4,1) check (duree_heures > 0),   -- nombre d'heures (retenue)
   echeance date,
   statut text not null default 'a_faire' check (statut in ('a_faire','faite','annulee')),
   created_at timestamptz not null default now(),
@@ -231,7 +232,7 @@ end $$;
 -- appel_alerte_vs_min plus tard. (Les notifications push viendront plus tard ; l'écran « Suivi du jour » les affiche.)
 create function public.appels_manquants()
 returns table (cours_id uuid, debut timestamptz, classe text, matiere text, professeur_id uuid, minutes_ecoulees int, niveau text)
-language sql stable set search_path = public as $$
+language sql stable security definer set search_path = public as $$
   with p as (
     select coalesce((select (valeur #>> '{}')::int from parametres where cle = 'appel_delai_min'), 30) as delai,
            coalesce((select (valeur #>> '{}')::int from parametres where cle = 'appel_alerte_vs_min'), 15) as alerte)
@@ -246,6 +247,7 @@ language sql stable set search_path = public as $$
   where c.debut <= now() - make_interval(mins => p.delai)
     and c.debut > now() - interval '1 day'
     and a.valide_a is null
+    and public.est_personnel()
   order by c.debut
 $$;
 

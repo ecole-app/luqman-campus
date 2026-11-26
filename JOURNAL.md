@@ -35,7 +35,9 @@
 
 ## 2026-11-26 — Étape 2 : vie scolaire du quotidien
 - Migration `0003_vie_scolaire.sql` : cours, appels, présences (présent / absent / retard / sortie / dispensé), observations, punitions, coffre à téléphones. Heures toujours celles du serveur, auteur des observations/punitions non falsifiable, retard arrondi au palier réglé (`retard_palier_min`), appels non validés remontés après `appel_delai_min` puis `appel_alerte_vs_min`. Un professeur ne fait l'appel que de ses cours ; la vie scolaire de tous.
-- Tests : `npm run test:db` = 66 tests, tous verts (dont droits prof/élève/vie scolaire, arrondi du retard, sortie, coffre, journal d'audit).
+- Retenue : le nombre d'heures est obligatoire (colonne `duree_heures`, demande d'Ahmed).
+- Tests : `npm run test:db` = 69 tests, tous verts (dont droits prof/élève/vie scolaire, arrondi du retard, sortie, coffre, journal d'audit).
+- Test réel dans le navigateur : 2 défauts trouvés et corrigés (droits en accès libre sur les présences ; « appels non faits » vide faute de lecture des réglages).
 - Installé sur Supabase (migration + extension de l'accès libre). `dev_creer_cours_du_jour()` crée 24 cours fictifs pour aujourd'hui (bouton en mode test).
 - Écrans dans `app/vie-scolaire.js` : Appel, Suivi du jour, Téléphones, Punitions. Pensé pour téléphone (gros boutons).
 - **À retirer avant 0b** : `retirer_acces_libre.sql` couvre aussi l'étape 2 (testé) et supprime `dev_creer_cours_du_jour`.

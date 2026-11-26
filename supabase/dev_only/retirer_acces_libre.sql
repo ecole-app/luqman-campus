@@ -27,6 +27,7 @@ language sql stable security definer set search_path = public as $$
 $$;
 
 drop function if exists public.dev_creer_cours_du_jour();
+revoke execute on function public.est_vie_scolaire(), public.peut_appeler(uuid) from anon;
 revoke execute on function
   public.ouvrir_appel(uuid), public.valider_appel(uuid), public.appels_manquants(),
   public.deposer_telephone(uuid, text), public.restituer_telephone(uuid), public.signaler_non_depot(uuid) from anon;

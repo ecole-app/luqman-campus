@@ -18,6 +18,7 @@ language sql stable security definer set search_path = public as $$ select true 
 create or replace function public.peut_appeler(p_cours uuid) returns boolean
 language sql stable security definer set search_path = public as $$ select true $$;
 
+grant execute on function public.est_vie_scolaire(), public.peut_appeler(uuid) to anon;
 grant select, insert, update, delete on public.cours, public.presences, public.observations, public.punitions to anon;
 grant select on public.appels, public.coffre_telephone to anon;
 grant execute on function
