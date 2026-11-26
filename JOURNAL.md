@@ -60,3 +60,9 @@ Demande d'Ahmed : aller au bout de l'étape 2 pour ne pas y revenir. Tout fait s
 - **Pour installer** (depuis un ordinateur) : appliquer `0004` sur Supabase, **puis relancer `supabase/dev_only/acces_libre.sql` en entier** (0004 remet la règle d'appel par rôle, l'accès libre doit être réappliqué), puis fusionner la PR. Ensuite test réel dans le navigateur.
 - Restes : notifications push ; test chronométré d'un appel de 25 élèves sur un vrai téléphone ; points ajoutés à `docs/ETAPE-0B.md` (copie hors ligne, durées de conservation, boutons selon le rôle).
 
+
+## 2026-11-26 — Étape 2 approfondie installée
+- Migration `0004` appliquée sur Supabase, `acces_libre.sql` relancé en entier, PR #1 fusionnée, site redéployé.
+- Test réel dans le navigateur (données fictives) : les 10 onglets de la vie scolaire s'ouvrent sans erreur ; un appel a été ouvert, un absent et un retard saisis (heure posée par le serveur), puis appel validé et verrouillé (« Corriger » avec motif).
+- Décisions d'Ahmed pour l'étape 3 : note ≥ 18 en jaune pétillant, note < 8 en rouge écarlate (seuils réglables, pastille lisible).
+- À faire : inviter le directeur (compte GitHub Luqman42, rôle Write) sur le dépôt ; intégrer son système « Présences Luqmân » (appel des profs) ; test chronométré de 25 élèves sur téléphone ; notifications push.
