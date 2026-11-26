@@ -12,6 +12,7 @@ await db.exec(`
   create role anon nologin; create role authenticated nologin;
 `);
 await db.exec(readFileSync(new URL('../migrations/0001_fondations.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../migrations/0002_donnees_etablissement.sql', import.meta.url), 'utf8'));
 
 const U = { gest:'00000000-0000-0000-0000-000000000001', dir:'00000000-0000-0000-0000-000000000002',
   prof:'00000000-0000-0000-0000-000000000003', eleve:'00000000-0000-0000-0000-000000000004',
@@ -54,6 +55,72 @@ await test('la direction peut être aussi administrateur (2 rôles)', async () =
 await test('un professeur ne peut pas se donner un rôle', async () => { const r = await as('prof', `insert into user_roles(user_id,role) values ('${U.prof}','direction')`); return !r.ok; });
 await test('un compte désactivé perd tous ses droits', async () => { await as('dir', `update profils set actif=false where id='${U.prof}'`); const r = await as('prof', 'select * from parametres'); await as('dir', `update profils set actif=true where id='${U.prof}'`); return !r.ok || r.res.rows.length === 0; });
 await test('le gestionnaire passe partout (au-dessus des rôles)', async () => { const r = await as('gest', `update parametres set valeur='6' where cle='edt_heures_max_jour' returning cle`); return r.ok && r.res.rows.length === 1; });
+
+// ---------- Étape 1 : données de l'établissement ----------
+await db.exec(`
+  insert into annees_scolaires(libelle, debut, fin, active) values ('2026-2027','2026-09-01','2027-07-04', true);
+  insert into classes(annee_id, niveau, nom) select id, '5e', '5e A' from annees_scolaires;
+  insert into classes(annee_id, niveau, nom) select id, '6e', '6e A' from annees_scolaires;
+  insert into eleves(nom, prenom, date_naissance, ine, classe_id, profil_id)
+    select 'Ferhat','Sarah','2013-03-02','12345678901', id, '${U.eleve}' from classes where nom='5e A';
+  insert into eleves(nom, prenom, date_naissance, ine, classe_id, profil_id)
+    select 'Amrani','Adam','2013-07-19','12345678902', id, '${U.eleve2}' from classes where nom='5e A';
+  insert into matieres(code, nom) values ('EPS','Éducation physique et sportive'), ('MATH','Mathématiques');
+`);
+
+await test('une seule année scolaire peut être active', async () => { const r = await as('dir', `insert into annees_scolaires(libelle,debut,fin,active) values ('2027-2028','2027-09-01','2028-07-04', true)`); return !r.ok; });
+await test('un élève ne voit que sa propre fiche', async () => { const r = await as('eleve', 'select nom from eleves'); return r.ok && r.res.rows.length === 1 && r.res.rows[0].nom === 'Ferhat'; });
+await test('un élève ne voit pas les classes', async () => { const r = await as('eleve', 'select * from classes'); return !r.ok || r.res.rows.length === 0; });
+await test('un professeur lit les élèves et les classes', async () => { const a = await as('prof', 'select * from eleves'); const b = await as('prof', 'select * from classes'); return a.ok && a.res.rows.length === 2 && b.ok && b.res.rows.length === 2; });
+await test('un professeur ne modifie pas un élève', async () => { const r = await as('prof', `update eleves set nom='X' returning id`); return !r.ok || r.res.rows.length === 0; });
+await test('un professeur ne crée pas de classe', async () => { const r = await as('prof', `insert into classes(annee_id,niveau,nom) select id,'4e','4e A' from annees_scolaires`); return !r.ok; });
+await test('la direction crée une matière et un enseignement', async () => {
+  const a = await as('dir', `insert into matieres(code,nom) values ('SVT','Sciences de la vie et de la Terre') returning id`);
+  const b = await as('dir', `insert into enseignements(classe_id, matiere_id, professeur_id, coefficient, heures_hebdo)
+    select c.id, m.id, '${U.prof}', 2, 3 from classes c, matieres m where c.nom='5e A' and m.code='EPS' returning id`);
+  return a.ok && b.ok && b.res.rows.length === 1; });
+await test('un coefficient nul ou négatif est refusé', async () => { const r = await as('dir', `insert into enseignements(classe_id, matiere_id, coefficient) select c.id, m.id, 0 from classes c, matieres m where c.nom='6e A' and m.code='MATH'`); return !r.ok; });
+await test('un INE mal formé est refusé', async () => { const r = await as('dir', `insert into eleves(nom,prenom,date_naissance,ine) values ('A','B','2013-01-01','abc')`); return !r.ok; });
+await test('deux élèves ne peuvent pas avoir le même INE', async () => { const r = await as('dir', `insert into eleves(nom,prenom,date_naissance,ine) values ('A','B','2013-01-01','12345678901')`); return !r.ok; });
+await test('la création d’un élève est écrite au journal', async () => { const r = await db.query(`select count(*)::int as n from journal_audit where table_nom='eleves' and operation='INSERT'`); return r.rows[0].n === 2; });
+
+// Import CSV : une classe fictive de 25 élèves contenant des erreurs volontaires
+const bonnes = Array.from({ length: 22 }, (_, k) => ({ nom: `Nom${k}`, prenom: `Prenom${k}`, naissance: '2014-05-1' + (k % 9), ine: String(20000000000 + k), classe: '6e A' }));
+const fautes = [
+  { nom: '', prenom: 'Sans', naissance: '2014-01-01', ine: '', classe: '6e A' },                       // ligne 23 : nom manquant
+  { nom: 'Date', prenom: 'Fausse', naissance: '31/02/2014', ine: '', classe: '6e A' },                 // ligne 24 : mauvais format
+  { nom: 'Ailleurs', prenom: 'Classe', naissance: '2014-02-02', ine: '', classe: '9z Z' }              // ligne 25 : classe inconnue
+];
+const fichier = [...bonnes, ...fautes];
+const compte = async () => (await db.query('select count(*)::int as n from eleves')).rows[0].n;
+
+await test('un professeur ne peut pas lancer un import', async () => { const r = await as('prof', `select controler_import_eleves('${JSON.stringify(bonnes)}'::jsonb)`); return !r.ok; });
+await test('le contrôle signale exactement les 3 erreurs, ligne par ligne', async () => {
+  const avant = await compte();
+  const r = await as('dir', `select controler_import_eleves('${JSON.stringify(fichier).replace(/'/g, "''")}'::jsonb) as r`);
+  const x = r.res.rows[0].r; const lignes = x.erreurs.map(e => e.ligne).sort((a, b) => a - b);
+  return x.ok === false && x.nb === 25 && JSON.stringify(lignes) === '[23,24,25]' && (await compte()) === avant; });
+await test('l’import refuse tout (rien écrit) s’il reste une seule erreur', async () => {
+  const avant = await compte();
+  const r = await as('dir', `select importer_eleves('${JSON.stringify(fichier).replace(/'/g, "''")}'::jsonb) as r`);
+  return r.res.rows[0].r.importes === 0 && (await compte()) === avant; });
+await test('un INE déjà dans la base ou en double dans le fichier est détecté', async () => {
+  const f = [{ nom: 'Z', prenom: 'Z', naissance: '2014-01-01', ine: '12345678901', classe: '6e A' },
+             { nom: 'Y', prenom: 'Y', naissance: '2014-01-02', ine: '30000000000', classe: '6e A' },
+             { nom: 'X', prenom: 'X', naissance: '2014-01-03', ine: '30000000000', classe: '6e A' }];
+  const r = await as('dir', `select controler_import_eleves('${JSON.stringify(f)}'::jsonb) as r`);
+  const lignes = r.res.rows[0].r.erreurs.map(e => e.ligne); return JSON.stringify(lignes) === '[1,3]'; });
+await test('un élève déjà présent (même nom, prénom, naissance) est détecté', async () => {
+  const f = [{ nom: 'ferhat', prenom: 'SARAH', naissance: '2013-03-02', ine: '', classe: '5e A' }];
+  const r = await as('dir', `select controler_import_eleves('${JSON.stringify(f)}'::jsonb) as r`); return r.res.rows[0].r.ok === false; });
+await test('le fichier corrigé (22 lignes valides) est importé en une fois', async () => {
+  const avant = await compte();
+  const r = await as('dir', `select importer_eleves('${JSON.stringify(bonnes)}'::jsonb) as r`);
+  return r.res.rows[0].r.importes === 22 && (await compte()) === avant + 22; });
+await test('réimporter le même fichier est refusé (doublons)', async () => {
+  const avant = await compte();
+  const r = await as('dir', `select importer_eleves('${JSON.stringify(bonnes)}'::jsonb) as r`);
+  return r.res.rows[0].r.importes === 0 && (await compte()) === avant; });
 
 console.log(`\n${n - fails}/${n} tests réussis`);
 process.exit(fails ? 1 : 0);
