@@ -12,6 +12,7 @@
   :root { --vert:#0A2E2A; --or:#D4A017; --sarcelle:#0D9488; --sable:#F6F1E7; --carte:#fff; --texte:#1c2b29; --doux:#5d6b68; --filet:#e4dccb; --rouge:#b3261e; --ok:#1b7a4b; }
   * { box-sizing:border-box; }
   body { margin:0; font-family:'DM Sans',system-ui,sans-serif; background:var(--sable); color:var(--texte); }
+  body.cadre header { display:none; }
   header { background:var(--vert); color:#fff; padding:12px 16px; display:flex; align-items:center; gap:12px; }
   header svg { width:36px; height:36px; flex:none; }
   header h1 { font-family:'Playfair Display',serif; font-size:20px; margin:0; font-weight:700; }
@@ -60,6 +61,7 @@
 <script>
 const sb = supabase.createClient(window.LC.url, window.LC.key, { auth: { persistSession: false } });
 if (window.LC.modeTest) document.getElementById('bandeau').hidden = false;
+if (window.self !== window.top) document.body.classList.add('cadre');
 
 const $ = s => document.querySelector(s);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

@@ -111,6 +111,13 @@ textarea{width:100%;min-height:72px;resize:none;overflow:hidden}
 select.cs{width:60px;padding:6px 8px;min-height:36px}
 .lv1{color:var(--red);font-weight:700}.lv2{color:var(--goldd);font-weight:700}.lv3{color:var(--teal);font-weight:700}.lv4{color:var(--teal);font-weight:800}
 body.ecran>header,body.ecran>nav,body.ecran>main{display:none}
+.mode{display:flex;gap:2px;margin-left:auto;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:3px}
+.mode button{background:transparent;border:0;color:#cfe3df;font:inherit;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer;min-height:36px}
+.mode button.on{background:#D4A017;color:#0A2E2A}
+body.reel>nav,body.reel>main,body.reel #role,body.reel label[for=role]{display:none}
+#reel{display:none;width:100%;border:0;background:#F6F1E7}
+body.reel #reel{display:block}
+
 </style>
 </head>
 <body>
@@ -128,9 +135,14 @@ body.ecran>header,body.ecran>nav,body.ecran>main{display:none}
     <option value="parent">Parent de Sarah (aperçu)</option>
     <option value="eleve">Élève Sarah (aperçu)</option>
   </select>
+  <div class="mode" role="group" aria-label="Version">
+    <button id="m-demo" class="on" type="button">Démo (maquettes)</button>
+    <button id="m-reel" type="button">Appli réelle</button>
+  </div>
 </header>
 <nav id="nav" aria-label="Sections"></nav>
 <main id="app"></main>
+<iframe id="reel" title="Appli réelle connectée à Supabase"></iframe>
 <div id="layer"></div>
 <script>
 {
@@ -535,6 +547,24 @@ function saved(){const el=$('#saved');if(el){el.textContent='Enregistré à '+no
 
 if(IS_SCREEN){document.body.classList.add('ecran');document.title='Luqmân Campus — écran conseil';renderScreen();send('hello');setInterval(()=>send('hello'),4000)}else{EDT=genEDT();render()}
 }
+</script>
+<script>
+(function(){
+  var f=document.getElementById('reel'), h=document.querySelector('header');
+  function taille(){ f.style.height=(window.innerHeight-h.offsetHeight)+'px'; }
+  function mode(m){
+    var reel = m==='reel';
+    document.body.classList.toggle('reel',reel);
+    document.getElementById('m-demo').classList.toggle('on',!reel);
+    document.getElementById('m-reel').classList.toggle('on',reel);
+    if(reel && !f.getAttribute('src')) f.setAttribute('src','app/');
+    taille();
+  }
+  document.getElementById('m-demo').onclick=function(){ mode('demo'); };
+  document.getElementById('m-reel').onclick=function(){ mode('reel'); };
+  window.addEventListener('resize',taille);
+  if(new URLSearchParams(location.search).get('mode')==='reel') mode('reel');
+})();
 </script>
 </body>
 </html>
