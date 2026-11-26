@@ -557,7 +557,7 @@ if(IS_SCREEN){document.body.classList.add('ecran');document.title='Luqmân Campu
     document.body.classList.toggle('reel',reel);
     document.getElementById('m-demo').classList.toggle('on',!reel);
     document.getElementById('m-reel').classList.toggle('on',reel);
-    if(reel && !f.getAttribute('src')) f.setAttribute('src','app/');
+    if(reel && !f.getAttribute('src')) f.setAttribute('src','app/?v='+Date.now());
     taille();
   }
   document.getElementById('m-demo').onclick=function(){ mode('demo'); };
