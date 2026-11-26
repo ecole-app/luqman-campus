@@ -44,3 +44,26 @@ revoke execute on function
 revoke all on public.fermetures, public.groupes, public.groupe_eleves, public.absences_prevues, public.corrections_presence,
   public.seances_retenue, public.incidents, public.incident_eleves, public.passages_infirmerie from anon;
 
+
+-- ---- Étape 3 : notes et compétences ----
+create or replace function public.peut_noter(p_enseignement uuid) returns boolean
+language plpgsql stable security definer set search_path = public as $$
+begin
+  return public.est_admin()
+      or (public.a_un_role(array['professeur','professeur_principal']::public.role_app[])
+          and exists (select 1 from public.enseignements e where e.id = p_enseignement and e.professeur_id = auth.uid()));
+end $$;
+create or replace function public.peut_bilan(p_eleve uuid) returns boolean
+language plpgsql stable security definer set search_path = public as $$
+begin
+  return public.est_admin()
+      or (public.a_un_role(array['professeur_principal']::public.role_app[])
+          and exists (select 1 from public.eleves e join public.classes c on c.id = e.classe_id
+                      where e.id = p_eleve and c.prof_principal_id = auth.uid()));
+end $$;
+revoke execute on function
+  public.peut_noter(uuid), public.peut_noter_eval(uuid), public.peut_bilan(uuid), public.periode_est_verrouillee(uuid),
+  public.saisir_notes(uuid, jsonb), public.saisir_acquisitions(uuid, jsonb),
+  public.moyennes_matieres(uuid, uuid), public.moyennes_generales(uuid, uuid), public.bilan_competences(uuid, uuid) from anon;
+revoke all on public.competences, public.evaluations, public.evaluation_competences,
+  public.notes, public.acquisitions, public.bilans_competences from anon;

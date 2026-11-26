@@ -61,3 +61,15 @@ grant execute on function
   public.eleves_a_surveiller(), public.stats_absenteisme(date, date) to anon;
 -- (liste_professeurs reste réservée aux comptes connectés : les noms du personnel ne sont pas ouverts.)
 
+
+-- ---- Étape 3 : notes et compétences ----
+create or replace function public.peut_noter(p_enseignement uuid) returns boolean
+language sql stable security definer set search_path = public as $$ select true $$;
+create or replace function public.peut_bilan(p_eleve uuid) returns boolean
+language sql stable security definer set search_path = public as $$ select true $$;
+grant select, insert, update, delete on public.competences, public.evaluations, public.evaluation_competences,
+  public.notes, public.acquisitions, public.bilans_competences to anon;
+grant execute on function
+  public.peut_noter(uuid), public.peut_noter_eval(uuid), public.peut_bilan(uuid), public.periode_est_verrouillee(uuid),
+  public.saisir_notes(uuid, jsonb), public.saisir_acquisitions(uuid, jsonb),
+  public.moyennes_matieres(uuid, uuid), public.moyennes_generales(uuid, uuid), public.bilan_competences(uuid, uuid) to anon;

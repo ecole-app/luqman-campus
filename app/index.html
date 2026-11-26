@@ -54,7 +54,7 @@
 <body>
 <header>
   <svg viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="22" fill="#0A2E2A"/><g fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"><path d="M72 30 A28 28 0 1 0 72 70"/><path d="M42 32 V64 H62"/></g><polygon points="77,14.5 81.5,19 77,23.5 72.5,19" fill="#D4A017"/></svg>
-  <div><h1>Luqmân Campus</h1><small>Vie scolaire · administration</small></div>
+  <div><h1>Luqmân Campus</h1><small>Vie scolaire · notes · administration</small></div>
 </header>
 <div id="bandeau" class="bandeau" hidden><strong>Mode test :</strong> accès libre, données fictives uniquement. N'entrez aucune vraie donnée d'élève. Ce mode sera retiré avant la mise en service.</div>
 <nav id="nav"></nav>
@@ -272,6 +272,7 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
 </script>
 <script src="vie-scolaire.js?v=4"></script>
 <script src="vie-scolaire-2.js?v=4"></script>
+<script src="notes.js?v=1"></script>
 <script>charger().then(ok => ok && dessiner());</script>
 </body>
 </html>

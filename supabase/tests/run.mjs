@@ -16,6 +16,7 @@ await db.exec(readFileSync(new URL('../migrations/0001_fondations.sql', import.m
 await db.exec(readFileSync(new URL('../migrations/0002_donnees_etablissement.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0003_vie_scolaire.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0004_vie_scolaire_complements.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../migrations/0005_notes_competences.sql', import.meta.url), 'utf8'));
 
 const U = { gest:'00000000-0000-0000-0000-000000000001', dir:'00000000-0000-0000-0000-000000000002',
   prof:'00000000-0000-0000-0000-000000000003', eleve:'00000000-0000-0000-0000-000000000004',
@@ -349,6 +350,146 @@ await test('statistiques d’absentéisme par classe', async () => {
   const r = await as('vs2', `select * from stats_absenteisme(current_date - 1, current_date + 1) where classe='5e A'`);
   const x = r.res?.rows?.[0]; return r.ok && x.saisies > 0 && x.absences >= 1 && Number(x.taux_absence) > 0; });
 
+// ---------- Étape 3 : notes et compétences ----------
+await db.exec(`
+  insert into periodes(annee_id, numero, libelle, debut, fin) select id, 1, 'Trimestre 1', '2026-09-01', '2026-12-18' from annees_scolaires where active;
+  insert into periodes(annee_id, numero, libelle, debut, fin) select id, 2, 'Trimestre 2', '2027-01-05', '2027-03-26' from annees_scolaires where active;
+  insert into periodes(annee_id, numero, libelle, debut, fin) select id, 3, 'Trimestre 3', '2027-04-12', '2027-07-04' from annees_scolaires where active;
+  insert into user_roles(user_id, role) values ('${U.prof2}', 'professeur_principal');
+  update classes set prof_principal_id = '${U.prof2}' where nom = '5e A';
+  update enseignements set coefficient = 3 where matiere_id = (select id from matieres where code='MATH');
+  update enseignements set coefficient = 2 where matiere_id = (select id from matieres where code='EPS');
+  insert into eleves(nom, prenom, date_naissance, classe_id) select 'Kaci','Lina','2014-01-10', id from classes where nom='6e A';
+`);
+const un = async sql => (await db.query(sql)).rows[0];
+const T1 = (await un(`select id from periodes where numero=1`)).id, T2 = (await un(`select id from periodes where numero=2`)).id;
+const cl5 = (await un(`select id from classes where nom='5e A'`)).id;
+const ensEps = (await un(`select e.id from enseignements e join matieres m on m.id=e.matiere_id where e.classe_id='${cl5}' and m.code='EPS'`)).id;
+const ensMath = (await un(`select e.id from enseignements e join matieres m on m.id=e.matiere_id where e.classe_id='${cl5}' and m.code='MATH'`)).id;
+const lina = (await un(`select id from eleves where nom='Kaci' and prenom='Lina'`)).id;
+const evid = async t => (await un(`select id from evaluations where titre='${t}'`)).id;
+const saisir = (user, ev, lignes) => as(user, `select saisir_notes('${ev}', '${JSON.stringify(lignes)}'::jsonb) as n`);
+const moyMat = async (user, per, ens) => (await as(user, `select eleve_id, moyenne, nb_notes, moyenne_classe, minimum, maximum from moyennes_matieres('${cl5}', ${per ? `'${per}'` : 'null'}) where enseignement_id='${ens}'`)).res?.rows || [];
+const moyGen = async (user, per) => (await as(user, `select * from moyennes_generales('${cl5}', ${per ? `'${per}'` : 'null'})`)).res?.rows || [];
+const de = (rows, id) => rows.find(r => r.eleve_id === id);
+
+await test('évaluation : la période est déduite de la date et l’auteur posé par le serveur', async () => {
+  const r = await as('prof', `insert into evaluations(enseignement_id, titre, date_eval, periode_id, created_by) values ('${ensEps}', 'Course longue', '2026-10-12', '${T2}', '${U.dir}') returning periode_id, created_by`);
+  return r.ok && r.res.rows[0].periode_id === T1 && r.res.rows[0].created_by === U.prof; });
+await test('un professeur ne crée pas d’évaluation dans l’enseignement d’un collègue', async () => {
+  const r = await as('prof', `insert into evaluations(enseignement_id, titre, date_eval) values ('${ensMath}', 'Intrus', '2026-10-12')`); return !r.ok; });
+await test('une date hors de toute période est refusée', async () => {
+  const r = await as('prof', `insert into evaluations(enseignement_id, titre, date_eval) values ('${ensEps}', 'Été', '2026-08-15')`); return !r.ok && r.err.includes('Aucune période'); });
+await test('saisie : virgule décimale acceptée, puis note, absent', async () => {
+  const ev = await evid('Course longue');
+  const a = await saisir('prof', ev, [{ eleve_id: sarah, valeur: '16,5' }]);
+  const v1 = await un(`select valeur from notes where eleve_id='${sarah}' and evaluation_id='${ev}'`);
+  const b = await saisir('prof', ev, [{ eleve_id: sarah, valeur: '16' }, { eleve_id: adam, valeur: '12' }]);
+  return a.ok && Number(v1.valeur) === 16.5 && b.ok && b.res.rows[0].n === 2; });
+await test('saisie : note au-dessus du barème, négative ou illisible refusée', async () => {
+  const ev = await evid('Course longue');
+  const a = await saisir('prof', ev, [{ eleve_id: sarah, valeur: '21' }]); const b = await saisir('prof', ev, [{ eleve_id: sarah, valeur: '-1' }]);
+  const c = await saisir('prof', ev, [{ eleve_id: sarah, valeur: 'abc' }]);
+  return !a.ok && a.err.includes('barème') && !b.ok && b.err.includes('négative') && !c.ok && c.err.includes('illisible'); });
+await test('saisie : un élève d’une autre classe est refusé, et rien n’est écrit (tout ou rien)', async () => {
+  const ev = await evid('Course longue');
+  const a = await saisir('prof', ev, [{ eleve_id: adam, valeur: '5' }, { eleve_id: lina, valeur: '5' }]);
+  const k = await un(`select valeur from notes where eleve_id='${adam}' and evaluation_id='${ev}'`);
+  return !a.ok && a.err.includes('pas dans la classe') && Number(k.valeur) === 12; });
+await test('un autre professeur ne saisit pas dans l’évaluation d’un collègue', async () => {
+  const r = await saisir('prof2', await evid('Course longue'), [{ eleve_id: sarah, valeur: '1' }]); return !r.ok; });
+await test('élève et visiteur ne voient aucune note ni compétence ; la vie scolaire les lit', async () => {
+  const noms = ['evaluations', 'notes', 'acquisitions', 'bilans_competences'];
+  for (const t of noms) { const e = await as('eleve', `select * from ${t}`); const a = await as('anon', `select * from ${t}`);
+    if ((e.ok && e.res.rows.length) || (a.ok && a.res.rows.length)) return `fuite sur ${t}`; }
+  const v = await as('vs2', 'select * from notes'); return v.ok && v.res.rows.length > 0; });
+await test('réglages des couleurs : 18 et 8 par défaut, lisibles par les professeurs', async () => {
+  const r = await as('prof', `select cle, valeur #>> '{}' as v from parametres where cle in ('note_seuil_haut','note_seuil_bas')`);
+  const m = Object.fromEntries((r.res?.rows || []).map(x => [x.cle, x.v])); return m.note_seuil_haut === '18' && m.note_seuil_bas === '8'; });
+
+// Moyennes : MATH = contrôle /20 coef 1 + interro /10 coef 2 ; EPS = course /20
+for (const [titre, date, bareme, coef] of [['Contrôle 1', '2026-10-20', 20, 1], ['Interro 2', '2026-11-05', 10, 2]])
+  await as('prof2', `insert into evaluations(enseignement_id, titre, date_eval, bareme, coefficient) values ('${ensMath}', '${titre}', '${date}', ${bareme}, ${coef})`);
+await saisir('prof2', await evid('Contrôle 1'), [{ eleve_id: sarah, valeur: '10' }, { eleve_id: adam, valeur: '14' }]);
+await saisir('prof2', await evid('Interro 2'), [{ eleve_id: sarah, valeur: '8' }, { eleve_id: adam, statut: 'absent' }]);
+await test('moyenne d’une matière : notes ramenées sur 20 et pondérées, absent ignoré', async () => {
+  const m = await moyMat('vs2', null, ensMath); const s = de(m, sarah), a = de(m, adam);
+  return Number(s.moyenne) === 14 && Number(a.moyenne) === 14 && s.nb_notes === 2 && a.nb_notes === 1; });
+await test('moyenne générale : coefficients des matières, rang et statistiques de classe', async () => {
+  const g = await moyGen('vs2', null); const s = de(g, sarah), a = de(g, adam);
+  return Number(s.moyenne) === 14.8 && s.rang === 1 && Number(a.moyenne) === 13.2 && a.rang === 2
+    && Number(s.moyenne_classe) === 14 && Number(s.minimum) === 13.2 && Number(s.maximum) === 14.8; });
+await test('un devoir non rendu compte 0 ; dispensé est ignoré ; le réglage change le calcul', async () => {
+  await as('prof2', `insert into evaluations(enseignement_id, titre, date_eval) values ('${ensMath}', 'Devoir maison', '2026-11-20')`);
+  await saisir('prof2', await evid('Devoir maison'), [{ eleve_id: sarah, statut: 'dispense' }, { eleve_id: adam, statut: 'non_rendu' }]);
+  const m = await moyMat('vs2', null, ensMath); const g = await moyGen('vs2', null);
+  const ok1 = Number(de(m, adam).moyenne) === 7 && Number(de(m, sarah).moyenne) === 14 && Number(de(m, adam).moyenne_classe) === 10.5 && Number(de(g, adam).moyenne) === 9;
+  await as('dir', `update parametres set valeur='false' where cle='note_non_rendu_compte_zero'`);
+  const m2 = await moyMat('vs2', null, ensMath);
+  await as('dir', `update parametres set valeur='true' where cle='note_non_rendu_compte_zero'`);
+  return ok1 && Number(de(m2, adam).moyenne) === 14; });
+await test('moyennes par période et sur l’année', async () => {
+  await as('prof2', `insert into evaluations(enseignement_id, titre, date_eval) values ('${ensMath}', 'Contrôle T2', '2027-01-20')`);
+  await saisir('prof2', await evid('Contrôle T2'), [{ eleve_id: sarah, valeur: '20' }]);
+  const t1 = de(await moyMat('vs2', T1, ensMath), sarah), t2 = de(await moyMat('vs2', T2, ensMath), sarah), an = de(await moyMat('vs2', null, ensMath), sarah);
+  return Number(t1.moyenne) === 14 && Number(t2.moyenne) === 20 && Number(an.moyenne) === 15.5; });
+await test('un élève ou un visiteur ne peut calculer aucune moyenne', async () => {
+  const a = await as('eleve', `select * from moyennes_generales('${cl5}', null)`); const b = await as('anon', `select * from moyennes_generales('${cl5}', null)`);
+  const c = await as('eleve', `select * from calcul_moyennes_ens('${cl5}', null)`);
+  return (!a.ok || a.res.rows.length === 0) && !b.ok && !c.ok; });
+await test('chaque modification de note est dans le journal, avec son auteur', async () => {
+  const x = await un(`select auteur, (avant->>'valeur')::numeric as avant, (apres->>'valeur')::numeric as apres from journal_audit
+                      where table_nom='notes' and operation='UPDATE' and (avant->>'valeur')::numeric = 16.5 limit 1`);
+  return x && x.auteur === U.prof && Number(x.apres) === 16; });
+await test('le barème ne peut pas passer sous une note déjà saisie', async () => {
+  const r = await as('prof', `update evaluations set bareme=10 where titre='Course longue'`); return !r.ok && r.err.includes('barème'); });
+
+// Verrouillage de période
+await db.exec(`update periodes set verrouillee = true where id = '${T1}'`);
+await test('période verrouillée : le professeur ne modifie, n’ajoute ni ne supprime plus rien', async () => {
+  const ev = await evid('Course longue');
+  const a = await saisir('prof', ev, [{ eleve_id: sarah, valeur: '15' }]);
+  const b = await as('prof', `insert into evaluations(enseignement_id, titre, date_eval) values ('${ensEps}', 'Tardif', '2026-10-30')`);
+  const c = await as('prof', `delete from evaluations where id='${ev}'`);
+  const d = await as('prof', `update evaluations set titre='Renommée' where id='${ev}'`);
+  return !a.ok && a.err.includes('verrouillée') && !b.ok && !c.ok && !d.ok; });
+await test('période verrouillée : la direction peut encore corriger', async () => {
+  const r = await as('dir', `update notes set valeur=15 where eleve_id='${sarah}' and evaluation_id='${await evid('Course longue')}' returning valeur`); return r.ok && r.res.rows.length === 1; });
+await db.exec(`update periodes set verrouillee = false where id = '${T1}'`);
+await saisir('prof', await evid('Course longue'), [{ eleve_id: sarah, valeur: '16' }]);
+await test('période déverrouillée : le professeur peut de nouveau saisir', async () => {
+  const r = await un(`select valeur from notes where eleve_id='${sarah}' and evaluation_id='${await evid('Course longue')}'`); return Number(r.valeur) === 16; });
+
+// Compétences
+await test('catalogue du socle : 8 compétences par cycle, cycle selon le niveau', async () => {
+  const r = await as('prof', `select cycle, count(*)::int n from competences group by cycle order by cycle`);
+  const c = await un(`select cycle_du_niveau('6e') a, cycle_du_niveau('5e') b, cycle_du_niveau('3e') c`);
+  return r.ok && r.res.rows.length === 2 && r.res.rows.every(x => x.n === 8) && c.a === 3 && c.b === 4 && c.c === 4; });
+await test('seule l’administration modifie le catalogue de compétences', async () => {
+  const a = await as('prof', `insert into competences(cycle, code, domaine, libelle) values (4, 'X1', 'Établissement', 'Test')`);
+  const b = await as('dir', `insert into competences(cycle, code, domaine, libelle) values (4, 'X1', 'Établissement', 'Compétence propre au collège') returning id`);
+  return !a.ok && b.ok; });
+const d14 = (await un(`select id from competences where cycle=4 and code='D1.4'`)).id, d11 = (await un(`select id from competences where cycle=4 and code='D1.1'`)).id;
+await as('prof', `insert into evaluations(enseignement_id, titre, date_eval) values ('${ensEps}', 'Match basket', '2026-11-10')`);
+for (const t of ['Course longue', 'Match basket']) await as('prof', `insert into evaluation_competences values ('${await evid(t)}', '${d14}')`);
+await test('compétences : niveaux saisis, un niveau sur une compétence non liée est refusé', async () => {
+  const ev1 = await evid('Course longue'), ev2 = await evid('Match basket');
+  const a = await as('prof', `select saisir_acquisitions('${ev1}', '${JSON.stringify([{ eleve_id: sarah, competence_id: d14, niveau: 3 }, { eleve_id: adam, competence_id: d14, niveau: 2 }])}'::jsonb) as n`);
+  const b = await as('prof', `select saisir_acquisitions('${ev2}', '${JSON.stringify([{ eleve_id: sarah, competence_id: d14, niveau: 4 }])}'::jsonb) as n`);
+  const c = await as('prof', `select saisir_acquisitions('${ev1}', '${JSON.stringify([{ eleve_id: sarah, competence_id: d11, niveau: 4 }])}'::jsonb) as n`);
+  const d = await as('prof', `select saisir_acquisitions('${ev1}', '${JSON.stringify([{ eleve_id: sarah, competence_id: d14, niveau: 5 }])}'::jsonb) as n`);
+  return a.ok && a.res.rows[0].n === 2 && b.ok && !c.ok && !d.ok; });
+await test('bilan : niveau proposé = moyenne arrondie des niveaux saisis', async () => {
+  const r = await as('vs2', `select * from bilan_competences('${cl5}', '${T1}') where competence_id='${d14}'`); const s = de(r.res.rows, sarah), a = de(r.res.rows, adam);
+  return Number(s.moyenne) === 3.5 && s.niveau_propose === 4 && s.niveau_retenu === 4 && s.nb === 2 && a.niveau_propose === 2 && s.modifie === false; });
+await test('bilan : seul le professeur principal de la classe (ou la direction) corrige un niveau', async () => {
+  const ins = (u, e) => as(u, `insert into bilans_competences(eleve_id, competence_id, periode_id, niveau) values ('${e}', '${d14}', '${T1}', 1)`);
+  const a = await ins('prof', sarah), b = await ins('prof2', lina), c = await ins('prof2', sarah);
+  const r = await as('vs2', `select * from bilan_competences('${cl5}', '${T1}') where competence_id='${d14}'`); const s = de(r.res.rows, sarah);
+  return !a.ok && !b.ok && c.ok && s.niveau_propose === 4 && s.niveau_retenu === 1 && s.modifie === true; });
+await test('un élève ne lit pas le bilan de compétences', async () => {
+  const r = await as('eleve', `select * from bilan_competences('${cl5}', '${T1}')`); return !r.ok || r.res.rows.length === 0; });
+
 // ---------- Accès libre de test : ouverture puis retrait ----------
 const lire = f => readFileSync(new URL('../dev_only/' + f, import.meta.url), 'utf8');
 await db.exec(`grant usage on schema public to anon`);   // état par défaut de Supabase
@@ -368,7 +509,20 @@ await test('accès libre : justification, surveillance et calendrier fonctionnen
   const a = await as('anon', 'select * from eleves_a_surveiller()'); const b = await as('anon', `insert into fermetures(debut, fin, motif) values (current_date + 100, current_date + 101, 'Test') returning id`);
   const c = await as('anon', 'select * from liste_professeurs()');
   return a.ok && b.ok && (!c.ok || c.res.rows.length === 0); });
+await test('accès libre : évaluations, notes, moyennes et compétences fonctionnent sans connexion', async () => {
+  const e = await as('anon', `insert into evaluations(enseignement_id, titre, date_eval) values ('${ensEps}', 'Libre', '2026-11-12') returning id`);
+  const ev = e.res?.rows?.[0]?.id;
+  const n = await saisir('anon', ev, [{ eleve_id: sarah, valeur: '9,5' }]);
+  const g = await as('anon', `select * from moyennes_generales('${cl5}', null)`); const c = await as('anon', 'select * from competences');
+  return e.ok && n.ok && g.ok && g.res.rows.length > 0 && c.ok && c.res.rows.length > 0; });
 await db.exec(lire('retirer_acces_libre.sql'));
+await test('après le retrait : plus de notes ni de moyennes sans connexion, et les droits par rôle reviennent', async () => {
+  const a = await as('anon', 'select * from notes'); const b = await as('anon', `select * from moyennes_generales('${cl5}', null)`);
+  const c = await as('anon', `insert into evaluations(enseignement_id, titre, date_eval) values ('${ensEps}', 'Intrus', '2026-11-12')`);
+  const d = await as('prof2', `insert into evaluations(enseignement_id, titre, date_eval) values ('${ensEps}', 'Pas le mien', '2026-11-12')`);
+  const f = await as('prof', `insert into evaluations(enseignement_id, titre, date_eval) values ('${ensEps}', 'Le mien', '2026-11-13') returning id`);
+  return (!a.ok || a.res.rows.length === 0) && !b.ok && !c.ok && !d.ok && f.ok; });
+
 await test('après le retrait : plus de calendrier, d’infirmerie ni de surveillance sans connexion', async () => {
   const a = await as('anon', 'select * from fermetures'); const b = await as('anon', 'select * from eleves_a_surveiller()');
   const c = await as('anon', `insert into passages_infirmerie(eleve_id) values ('${sarah}')`);

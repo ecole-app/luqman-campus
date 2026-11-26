@@ -35,7 +35,7 @@ const onglet = async k => { await clic(`#nav [data-k="${k}"]`); await w(300); };
 await page.goto(BASE, { waitUntil: 'networkidle0' });
 await w(500);
 const onglets = await page.$$eval('#nav button', b => b.map(x => x.dataset.k));
-ok('tous les onglets sont là', ['appel', 'suivi', 'fiche', 'pun', 'incidents', 'tel', 'infirmerie', 'tdb', 'eleves', 'classes', 'groupes', 'calendrier'].every(k => onglets.includes(k)), onglets.join(','));
+ok('tous les onglets sont là', ['appel', 'suivi', 'fiche', 'pun', 'incidents', 'tel', 'infirmerie', 'tdb', 'eleves', 'classes', 'groupes', 'calendrier', 'notes', 'competences'].every(k => onglets.includes(k)), onglets.join(','));
 
 // --- Appel en ligne ---
 await clic('#v-fictifs'); await w(300);
@@ -84,7 +84,7 @@ const apres = await page.evaluate(id => ({ file: JSON.parse(localStorage.getItem
 ok('retour du réseau : tout est envoyé (2 saisies + validation)', apres.file === 0 && apres.abs.length === 2 && apres.abs.every(x => x.endsWith('*')) && apres.valide, JSON.stringify(apres));
 
 // --- Ouverture de l'appli sans réseau (copie gardée sur l'appareil) ---
-await page.evaluate(async m => { const c = await caches.open('lc-app-v4'); await c.put('http://localhost:8765/app/vendor/supabase-2.119.2.js', new Response(m, { headers: { 'Content-Type': 'application/javascript' } })); }, MOCK);
+await page.evaluate(async m => { const c = await caches.open('lc-app-v5'); await c.put('http://localhost:8765/app/vendor/supabase-2.119.2.js', new Response(m, { headers: { 'Content-Type': 'application/javascript' } })); }, MOCK);
 await page.setOfflineMode(true);
 const dbAvant = await page.evaluate(() => JSON.stringify(__DB));
 await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {}); await w(1500);
@@ -165,6 +165,76 @@ await onglet('tel');
 await page.select('#v-classe-tel', await page.$eval('#v-classe-tel option:nth-child(2)', o => o.value)); await w(200);
 await clic('[data-dep]'); await w(200);
 ok('téléphone déposé', /Au coffre depuis/.test(await texte()));
+// --- Étape 3 : notes et compétences ---
+await onglet('notes'); await w(300);
+ok('notes : sélecteurs classe, matière et période', !!(await page.$('#n-classe')) && !!(await page.$('#n-ens')) && !!(await page.$('#n-per')));
+ok('notes : aucune évaluation au départ', /Aucune évaluation/.test(await texte()));
+await clic('#e-nouvelle');
+await page.type('#e-titre', 'Contrôle 1'); await page.$eval('#e-date', i => { i.value = '2026-10-12'; });
+await page.$eval('[data-comp]', c => c.click()); await clic('#e-creer'); await w(400);
+ok('évaluation créée dans le bon trimestre, saisie ouverte avec 8 élèves', /Évaluation créée dans Trimestre 1/.test(await texte()) && (await page.$$('#n-lignes .nl')).length === 8, await texte());
+const saisie = async (i, txt) => { await page.$$eval('#n-lignes .nl .ni', (els, i, txt) => { els[i].value = txt; els[i].dispatchEvent(new Event('change', { bubbles: true })); }, i, txt); await w(250); };
+const puce = async (i, k) => { await page.$$eval('#n-lignes .nl', (els, i, k) => els[i].querySelector(`[data-ch="${k}"]`).click(), i, k); await w(250); };
+const ligne = i => page.$$eval('#n-lignes .nl', (els, i) => els[i].innerText, i);
+await saisie(0, '19'); await saisie(1, '5'); await saisie(2, '12,5'); await saisie(3, 'abs'); await puce(4, 'non_rendu'); await puce(5, 'dispense');
+const lignesBD = await page.evaluate(() => __DB.notes.map(n => n.statut + ':' + n.valeur).sort().join(','));
+ok('notes enregistrées avec virgule, absent, non rendu, dispensé', lignesBD === 'absent:null,dispense:null,non_rendu:null,note:12.5,note:19,note:5', lignesBD);
+ok('19 → pastille jaune pétillant, 5 → rouge écarlate, 12,5 → neutre', await page.evaluate(() => {
+  const l = [...document.querySelectorAll('#n-lignes .nl')]; const c = i => l[i].querySelector('.np .note');
+  const haut = getComputedStyle(c(0)), bas = getComputedStyle(c(1));
+  return c(0).classList.contains('haut') && /linear-gradient/.test(haut.backgroundImage) && haut.animationName === 'lc-brille'
+    && c(1).classList.contains('bas') && bas.backgroundColor === 'rgb(225, 29, 0)' && !c(2).classList.contains('haut') && !c(2).classList.contains('bas'); }));
+ok('élève absent : puce « Abs » active, « Abs » dans le champ', /Abs/.test(await ligne(3)) && await page.$$eval('#n-lignes .nl', els => els[3].querySelector('[data-ch="absent"]').classList.contains('on')));
+await saisie(6, '25'); await saisie(7, 'abc');
+ok('note au-dessus du barème ou illisible : message, rien enregistré', /entre 0 et 20/.test(await ligne(6)) && /n’est pas une note/.test(await ligne(7)) && (await page.evaluate(() => __DB.notes.length)) === 6);
+ok('statistiques : moyenne, min, max', /Moyenne/.test(await page.$eval('#n-barre', b => b.innerText)) && /12[,.]17/.test(await page.$eval('#n-barre', b => b.innerText)), await page.$eval('#n-barre', b => b.innerText));
+await page.$$eval('#n-lignes .nl', els => els[0].querySelector('[data-com]').click()); await w(150);
+await page.type('#n-lignes .nl .com', 'Très bon travail'); await page.$eval('#n-lignes .nl .com', c => c.dispatchEvent(new Event('change', { bubbles: true }))); await w(250);
+ok('commentaire sur une note', (await page.evaluate(() => __DB.notes.find(n => Number(n.valeur) === 19).commentaire)) === 'Très bon travail');
+await page.screenshot({ path: CAP('6-saisie-notes.png') });
+await page.$eval('#m-titre', i => { i.value = 'Contrôle 1 bis'; }); await clic('#m-ok'); await w(300);
+ok('évaluation renommée', (await page.evaluate(() => __DB.evaluations[0].titre)) === 'Contrôle 1 bis');
+await clic('#s-retour'); await w(200);
+ok('liste : évaluation avec ses notées et sa compétence', /Contrôle 1 bis/.test(await texte()) && /3\/8|4\/8/.test(await texte()) && /1 compétence/.test(await texte()), await texte());
+
+// Relevé de classe : moyennes, rang, verrouillage
+await page.$$eval('[data-vue="releve"]', b => b[0].click()); await w(400);
+ok('relevé : l’élève à 19 est premier avec une pastille jaune, moyenne de classe affichée', await page.evaluate(() => {
+  const r = [...document.querySelectorAll('.rel tr')].find(t => /Amrani/.test(t.innerText)); return !!r && !!r.querySelector('.note.haut') && /Moyenne de la classe/.test(document.querySelector('.rel').innerText) && /\b1\b/.test(r.innerText); }), await texte());
+await clic('#r-csv'); await w(200);
+await clic('#r-verrou'); await w(300);
+ok('période verrouillée depuis le relevé', /verrouillée/.test(await texte()) && await page.evaluate(() => __DB.periodes[0].verrouillee === true));
+await page.$$eval('[data-vue="evals"]', b => b[0].click()); await w(400);
+await clic('[data-saisir]'); await w(200); await saisie(7, '3');
+ok('période verrouillée : la saisie est refusée avec le message du serveur', /Période verrouillée/.test(await ligne(7)), await ligne(7));
+await page.$$eval('[data-vue="releve"]', b => b[0].click()); await w(400); await clic('#r-verrou'); await w(200);
+ok('période déverrouillée', await page.evaluate(() => __DB.periodes[0].verrouillee === false));
+
+// Compétences
+await onglet('competences'); await w(400);
+ok('compétences : l’évaluation avec compétence est proposée', !!(await page.$('#c-eval')) && (await page.$$('.niv')).length === 8, await texte());
+await page.$eval('.niv button[data-n="3"]', b => b.click()); await w(250);
+ok('niveau 3 enregistré', await page.evaluate(() => __DB.acquisitions.length === 1 && __DB.acquisitions[0].niveau === 3));
+await page.$eval('.niv button[data-n="3"]', b => b.click()); await w(250);
+ok('même niveau touché une seconde fois : effacé', await page.evaluate(() => __DB.acquisitions.length === 0));
+await page.$eval('.niv button[data-n="4"]', b => b.click()); await w(250);
+await page.$$eval('[data-sub="bilan"]', b => b[0].click()); await w(400);
+ok('bilan : niveau proposé 4 pour l’élève évalué', /4/.test(await page.$eval('table .nv', n => n.innerText)));
+await page.$eval('[data-bil]', s => { s.value = '1'; s.dispatchEvent(new Event('change', { bubbles: true })); }); await w(400);
+ok('bilan corrigé à la main : ✎ affiché, niveau 1 retenu', await page.evaluate(() => __DB.bilans_competences.length === 1 && /✎/.test(document.querySelector('#vue').innerText) && document.querySelector('table .nv').innerText.trim() === '1'));
+await page.$$eval('[data-sub="catalogue"]', b => b[0].click()); await w(300);
+await page.type('#k-code', 'X1'); await page.type('#k-lib', 'Compétence propre au collège'); await clic('#k-ajout'); await w(300);
+ok('catalogue : compétence ajoutée', /Compétence propre au collège/.test(await texte()));
+await page.$$eval('[data-actif]', b => b[b.length - 1].click()); await w(300);
+ok('catalogue : compétence désactivée', /Désactivée/.test(await texte()));
+
+// Suppression en deux temps
+await onglet('notes'); await w(300);
+await page.$$eval('[data-vue="evals"]', b => b[0] && b[0].click()); await w(400);
+await clic('[data-suppr]'); ok('suppression : première touche demande confirmation', /Confirmer la suppression/.test(await texte()));
+await clic('[data-suppr]'); await w(300);
+ok('évaluation supprimée après confirmation', /Aucune évaluation/.test(await texte()) && (await page.evaluate(() => __DB.evaluations.length)) === 0);
+
 for (const k of ['eleves', 'classes', 'matieres', 'import', 'export', 'fiche']) { await onglet(k); }
 ok('aucune erreur JavaScript', erreurs.length === 0, erreurs.join(' | '));
 await onglet('appel'); await page.screenshot({ path: CAP('5-accueil.png') });
