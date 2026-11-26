@@ -13,6 +13,13 @@
   const noms = ['Amrani', 'Benali', 'Bouzid', 'Cherif', 'Dahmani', 'Ferhat', 'Haddad', 'Kaci'];
   DB.classes.forEach((c, ci) => noms.forEach((n, k) => DB.eleves.push({ id: uid(), nom: n, prenom: ['Adam', 'Lina', 'Amir', 'Sofia', 'Yanis', 'Sarah', 'Nour', 'Ilyes'][k], date_naissance: '2014-01-01', ine: null, classe_id: c.id, deleted_at: null })));
   DB.classes.forEach(c => DB.matieres.forEach(m => DB.enseignements.push({ id: uid(), classe_id: c.id, matiere_id: m.id, coefficient: 1, heures_hebdo: 3, professeur_id: null })));
+  Object.assign(DB, { evaluations: [], notes: [], evaluation_competences: [], acquisitions: [], bilans_competences: [], competences: [], parametres: [
+    { cle: 'note_seuil_haut', valeur: 18 }, { cle: 'note_seuil_bas', valeur: 8 },
+    { cle: 'niveaux_competences', valeur: ['Maîtrise insuffisante', 'Maîtrise fragile', 'Maîtrise satisfaisante', 'Très bonne maîtrise'] }] });
+  [3, 4].forEach(cy => [['D1.1', 'Langue française'], ['D1.4', 'Langages des arts et du corps'], ['D2', 'Méthodes et outils pour apprendre'], ['D3', 'Formation de la personne et du citoyen']]
+    .forEach(([code, lib], i) => DB.competences.push({ id: uid(), cycle: cy, code, domaine: 'Socle', libelle: lib, ordre: i, actif: true })));
+  const HOOKS = { competences: o => { if (o.actif === undefined) o.actif = true; return o; }, evaluations: o => { const p = DB.periodes.find(x => o.date_eval >= x.debut && o.date_eval <= x.fin); if (!p) throw new Error('Aucune période ne couvre cette date'); o.periode_id = p.id; return o; } };
+  const HOOK_ = (t, o) => HOOKS[t] ? HOOKS[t](o) : o;
   window.__DB = DB; window.__appels_rpc = [];
 
   const FK = { cours: 'cours_id', enseignements: 'enseignement_id', incidents: 'incident_id', annees_scolaires: 'annee_id' };
@@ -55,7 +62,7 @@
     run() {
       if (offline()) return { data: null, error: ERR };
       const T = DB[this.t]; if (!T) return { data: null, error: { message: 'table inconnue ' + this.t } };
-      if (this.op === 'insert') { this.rows.forEach(r => T.push({ id: uid(), created_at: now(), statut: this.t === 'punitions' ? (/retenue/i.test(r.type) ? 'demandee' : 'a_faire') : undefined, annulee: false, ...r, arrivee_a: this.t === 'passages_infirmerie' ? now() : r.arrivee_a })); return { data: null, error: null }; }
+      if (this.op === 'insert') { this.rows.forEach(r => T.push(HOOK_(this.t, { id: uid(), created_at: now(), statut: this.t === 'punitions' ? (/retenue/i.test(r.type) ? 'demandee' : 'a_faire') : undefined, annulee: false, ...r, arrivee_a: this.t === 'passages_infirmerie' ? now() : r.arrivee_a }))); return { data: null, error: null }; }
       const emb = T.map(r => embed(r, this.sel));
       const ok = emb.map((r, i) => this.f.every(f => f(r)) ? i : -1).filter(i => i >= 0);
       if (this.op === 'update') { ok.forEach(i => { Object.assign(T[i], this.vals); if (this.t === 'presences' && this.vals.statut) T[i].heure_evenement = this.vals.statut === 'present' ? null : now(); if (this.vals.statut === 'retard') T[i].minutes_retard = 15; }); return { data: null, error: null }; }
@@ -96,6 +103,59 @@
     restituer_telephone({ p_eleve }) { DB.coffre_telephone.filter(x => x.eleve_id === p_eleve).forEach(x => x.restitue_a = now()); return null; },
     signaler_non_depot({ p_eleve }) { DB.coffre_telephone.push({ id: uid(), eleve_id: p_eleve, jour: new Date().toLocaleDateString('sv', { timeZone: 'Europe/Paris' }), non_depose: true }); return { total: 1, seuil: 3, sanction_a_prevoir: false }; },
   };
+
+  // ---- Étape 3 : notes et compétences (mêmes règles que le serveur) ----
+  const calcMoy = (classe, periode) => {
+    const out = new Map(); const zero = true;
+    DB.enseignements.filter(en => en.classe_id === classe).forEach(en => DB.evaluations.filter(ev => ev.enseignement_id === en.id && (!periode || ev.periode_id === periode)).forEach(ev =>
+      DB.notes.filter(n => n.evaluation_id === ev.id).forEach(n => {
+        const el = DB.eleves.find(e => e.id === n.eleve_id); if (!el || el.classe_id !== classe) return;
+        const k = n.eleve_id + '|' + en.id; const o = out.get(k) || { eleve_id: n.eleve_id, enseignement_id: en.id, matiere_id: en.matiere_id, s: 0, c: 0, nb: 0 };
+        if (n.statut === 'note') { o.s += Number(n.valeur) / Number(ev.bareme) * 20 * Number(ev.coefficient); o.c += Number(ev.coefficient); o.nb++; }
+        else if (n.statut === 'non_rendu' && zero) { o.c += Number(ev.coefficient); o.nb++; }
+        out.set(k, o); })));
+    return [...out.values()].filter(o => o.c > 0).map(o => ({ ...o, moy: o.s / o.c }));
+  };
+  const r2 = x => Math.round(x * 100) / 100;
+  Object.assign(RPC, {
+    saisir_notes({ p_eval, p_lignes }) {
+      const ev = DB.evaluations.find(e => e.id === p_eval); const per = DB.periodes.find(p => p.id === ev.periode_id);
+      if (per && per.verrouillee) throw new Error('Période verrouillée : les notes ne peuvent plus être modifiées (voir la direction)');
+      p_lignes.forEach(l => {
+        const i = DB.notes.findIndex(n => n.evaluation_id === p_eval && n.eleve_id === l.eleve_id);
+        if (!l.statut && !String(l.valeur ?? '').trim()) { if (i >= 0) DB.notes.splice(i, 1); return; }
+        const st = l.statut || 'note'; let v = null;
+        if (st === 'note') { v = Number(String(l.valeur).replace(',', '.')); if (Number.isNaN(v)) throw new Error('Note illisible'); if (v > Number(ev.bareme)) throw new Error('La note dépasse le barème (sur ' + ev.bareme + ')'); }
+        const row = { id: uid(), evaluation_id: p_eval, eleve_id: l.eleve_id, statut: st, valeur: v, commentaire: l.commentaire || null };
+        if (i >= 0) DB.notes[i] = row; else DB.notes.push(row);
+      }); return p_lignes.length;
+    },
+    saisir_acquisitions({ p_eval, p_lignes }) {
+      p_lignes.forEach(l => { const i = DB.acquisitions.findIndex(a => a.evaluation_id === p_eval && a.competence_id === l.competence_id && a.eleve_id === l.eleve_id);
+        if (l.niveau == null) { if (i >= 0) DB.acquisitions.splice(i, 1); return; }
+        const row = { id: uid(), evaluation_id: p_eval, competence_id: l.competence_id, eleve_id: l.eleve_id, niveau: Number(l.niveau) }; if (i >= 0) DB.acquisitions[i] = row; else DB.acquisitions.push(row); });
+      return p_lignes.length;
+    },
+    moyennes_matieres({ p_classe, p_periode }) {
+      const l = calcMoy(p_classe, p_periode); const par = {}; l.forEach(o => (par[o.enseignement_id] = par[o.enseignement_id] || []).push(o.moy));
+      return l.map(o => { const v = par[o.enseignement_id]; return { eleve_id: o.eleve_id, enseignement_id: o.enseignement_id, matiere_id: o.matiere_id, moyenne: r2(o.moy), nb_notes: o.nb,
+        moyenne_classe: r2(v.reduce((a, b) => a + b, 0) / v.length), minimum: r2(Math.min(...v)), maximum: r2(Math.max(...v)) }; });
+    },
+    moyennes_generales({ p_classe, p_periode }) {
+      const g = {}; calcMoy(p_classe, p_periode).forEach(o => { const en = DB.enseignements.find(e => e.id === o.enseignement_id); const x = g[o.eleve_id] = g[o.eleve_id] || { s: 0, c: 0, nb: 0 }; x.s += o.moy * en.coefficient; x.c += en.coefficient; x.nb++; });
+      const l = Object.entries(g).map(([id, x]) => ({ eleve_id: id, m: r2(x.s / x.c), nb: x.nb })).sort((a, b) => b.m - a.m);
+      const ms = l.map(x => x.m); const moy = r2(ms.reduce((a, b) => a + b, 0) / (ms.length || 1));
+      return l.map(x => ({ eleve_id: x.eleve_id, moyenne: x.m, nb_matieres: x.nb, rang: 1 + ms.filter(y => y > x.m).length, moyenne_classe: moy, minimum: Math.min(...ms), maximum: Math.max(...ms) }));
+    },
+    bilan_competences({ p_classe, p_periode }) {
+      const m = {}; DB.acquisitions.forEach(a => { const ev = DB.evaluations.find(e => e.id === a.evaluation_id); const en = DB.enseignements.find(e => e.id === ev.enseignement_id);
+        const el = DB.eleves.find(e => e.id === a.eleve_id); if (en.classe_id !== p_classe || el.classe_id !== p_classe || (p_periode && ev.periode_id !== p_periode)) return;
+        const k = a.eleve_id + '|' + a.competence_id; (m[k] = m[k] || { eleve_id: a.eleve_id, competence_id: a.competence_id, v: [] }).v.push(a.niveau); });
+      DB.bilans_competences.filter(b => b.periode_id === p_periode).forEach(b => { const k = b.eleve_id + '|' + b.competence_id; (m[k] = m[k] || { eleve_id: b.eleve_id, competence_id: b.competence_id, v: [] }).o = b.niveau; });
+      return Object.values(m).map(x => { const moy = x.v.length ? x.v.reduce((a, b) => a + b, 0) / x.v.length : null; const prop = moy == null ? null : Math.round(moy);
+        return { eleve_id: x.eleve_id, competence_id: x.competence_id, nb: x.v.length, moyenne: moy == null ? null : r2(moy), niveau_propose: prop, niveau_retenu: x.o ?? prop, modifie: x.o != null }; });
+    },
+  });
   const client = {
     from: t => new Q(t),
     rpc: (n, a) => Promise.resolve().then(() => {
