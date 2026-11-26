@@ -2,6 +2,12 @@
   "name": "luqman-campus",
   "private": true,
   "type": "module",
-  "scripts": { "test:db": "node supabase/tests/run.mjs" },
-  "devDependencies": { "@electric-sql/pglite": "^0.3.0" }
+  "scripts": {
+    "test:db": "node supabase/tests/run.mjs",
+    "test:ecrans": "node tests/ecrans/test.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.3.0",
+    "puppeteer-core": "^23.11.1"
+  }
 }

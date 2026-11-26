@@ -48,3 +48,16 @@ begin
 end $$;
 grant execute on function public.dev_creer_cours_du_jour() to anon;
 
+-- ---- Étape 2 (compléments) ----
+grant select, insert, update, delete on public.fermetures, public.groupes, public.groupe_eleves, public.absences_prevues,
+  public.seances_retenue, public.incidents, public.incident_eleves to anon;
+grant select on public.corrections_presence to anon;
+grant select, insert on public.passages_infirmerie to anon;
+grant execute on function
+  public.jour_ferme(date), public.eleves_du_cours(uuid), public.synchroniser_presences(uuid, jsonb),
+  public.corriger_presence(uuid, public.statut_presence, text, timestamptz, text, text),
+  public.justifier_absences(uuid[], boolean, text, boolean), public.annuler_cours(uuid, boolean, text),
+  public.remplacer_cours(uuid, uuid), public.infirmerie_depart(uuid, text, text),
+  public.eleves_a_surveiller(), public.stats_absenteisme(date, date) to anon;
+-- (liste_professeurs reste réservée aux comptes connectés : les noms du personnel ne sont pas ouverts.)
+

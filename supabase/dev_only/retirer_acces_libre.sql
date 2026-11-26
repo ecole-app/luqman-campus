@@ -19,12 +19,13 @@ language sql stable security definer set search_path = public as $$
   select public.a_un_role(array['administrateur','direction','vie_scolaire']::public.role_app[])
 $$;
 create or replace function public.peut_appeler(p_cours uuid) returns boolean
-language sql stable security definer set search_path = public as $$
-  select public.est_vie_scolaire()
+language plpgsql stable security definer set search_path = public as $$
+begin
+  return public.est_vie_scolaire()
       or (public.a_un_role(array['professeur','professeur_principal']::public.role_app[])
           and exists (select 1 from public.cours c join public.enseignements e on e.id = c.enseignement_id
-                      where c.id = p_cours and e.professeur_id = auth.uid()))
-$$;
+                      where c.id = p_cours and (e.professeur_id = auth.uid() or c.remplacant_id = auth.uid())));
+end $$;
 
 drop function if exists public.dev_creer_cours_du_jour();
 revoke execute on function public.est_vie_scolaire(), public.peut_appeler(uuid) from anon;
@@ -32,4 +33,14 @@ revoke execute on function
   public.ouvrir_appel(uuid), public.valider_appel(uuid), public.appels_manquants(),
   public.deposer_telephone(uuid, text), public.restituer_telephone(uuid), public.signaler_non_depot(uuid) from anon;
 revoke all on public.cours, public.presences, public.observations, public.punitions, public.appels, public.coffre_telephone from anon;
+
+-- ---- Étape 2 (compléments) ----
+revoke execute on function
+  public.jour_ferme(date), public.eleves_du_cours(uuid), public.synchroniser_presences(uuid, jsonb),
+  public.corriger_presence(uuid, public.statut_presence, text, timestamptz, text, text),
+  public.justifier_absences(uuid[], boolean, text, boolean), public.annuler_cours(uuid, boolean, text),
+  public.remplacer_cours(uuid, uuid), public.infirmerie_depart(uuid, text, text),
+  public.eleves_a_surveiller(), public.stats_absenteisme(date, date) from anon;
+revoke all on public.fermetures, public.groupes, public.groupe_eleves, public.absences_prevues, public.corrections_presence,
+  public.seances_retenue, public.incidents, public.incident_eleves, public.passages_infirmerie from anon;
 
