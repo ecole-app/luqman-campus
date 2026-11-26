@@ -7,6 +7,7 @@
 insert into public.parametres(cle, valeur, description) values
  ('note_seuil_haut','18','Note (ramenée sur 20) à partir de laquelle la pastille est jaune pétillant'),
  ('note_seuil_bas','8','Note (ramenée sur 20) en dessous de laquelle la pastille est rouge écarlate'),
+ ('notes_visibles_tout_personnel','false','Si vrai, tout le personnel voit toutes les notes. Sinon : chaque professeur voit ses matières, le professeur principal sa classe, la direction tout'),
  ('note_non_rendu_compte_zero','true','Un devoir « non rendu » compte 0 dans la moyenne (sinon il est ignoré)'),
  ('niveaux_competences','["Maîtrise insuffisante","Maîtrise fragile","Maîtrise satisfaisante","Très bonne maîtrise"]',
   'Les 4 niveaux d''évaluation d''une compétence, du plus faible au plus fort')
@@ -145,6 +146,37 @@ begin
                       where e.id = p_eleve and c.prof_principal_id = auth.uid()));
 end $$;
 
+-- Qui peut LIRE les notes : l'administration ; le professeur de la matière ; le professeur principal de la classe ;
+-- tout le personnel seulement si le réglage notes_visibles_tout_personnel est à vrai.
+create function public.voit_toute_la_classe(p_classe uuid) returns boolean
+language plpgsql stable security definer set search_path = public as $$
+begin
+  return public.est_admin()
+      or (public.est_personnel() and coalesce((select (valeur #>> '{}')::boolean from public.parametres where cle = 'notes_visibles_tout_personnel'), false))
+      or exists (select 1 from public.classes c where c.id = p_classe and c.prof_principal_id = auth.uid());
+end $$;
+
+create function public.voit_notes_ens(p_enseignement uuid) returns boolean
+language plpgsql stable security definer set search_path = public as $$
+begin
+  return public.est_admin()
+      or exists (select 1 from public.enseignements e
+                 where e.id = p_enseignement
+                   and (e.professeur_id = auth.uid() or public.voit_toute_la_classe(e.classe_id)));
+end $$;
+
+create function public.voit_notes_eval(p_eval uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.voit_notes_ens((select enseignement_id from public.evaluations where id = p_eval))
+$$;
+
+create function public.voit_bilan_eleve(p_eleve uuid) returns boolean
+language plpgsql stable security definer set search_path = public as $$
+begin
+  return public.est_admin()
+      or exists (select 1 from public.eleves el where el.id = p_eleve and public.voit_toute_la_classe(el.classe_id));
+end $$;
+
 -- ---------- Règles côté serveur ----------
 -- Évaluation : la période vient de la date ; période verrouillée = seule l'administration modifie.
 create function public.evaluation_regles() returns trigger
@@ -240,11 +272,18 @@ begin
     for each row execute function public.auditer();
   foreach t in array array['competences','evaluations','evaluation_competences','notes','acquisitions','bilans_competences'] loop
     execute format('alter table public.%1$s enable row level security', t);
-    execute format('create policy %1$s_lecture on public.%1$s for select using (public.est_personnel())', t);
+    if t = 'competences' then
+      execute format('create policy %1$s_lecture on public.%1$s for select using (public.est_personnel())', t);
+    end if;
   end loop;
 end $$;
 
 -- Les élèves et les parents n'ont aucun accès aux notes avant la phase 2.
+create policy evaluations_lecture on public.evaluations for select using (public.voit_notes_ens(enseignement_id));
+create policy evaluation_competences_lecture on public.evaluation_competences for select using (public.voit_notes_eval(evaluation_id));
+create policy notes_lecture on public.notes for select using (public.voit_notes_eval(evaluation_id));
+create policy acquisitions_lecture on public.acquisitions for select using (public.voit_notes_eval(evaluation_id));
+create policy bilans_competences_lecture on public.bilans_competences for select using (public.voit_bilan_eleve(eleve_id));
 create policy competences_ecriture on public.competences for all
   using (public.est_admin()) with check (public.est_admin());
 create policy evaluations_ecriture on public.evaluations for all
@@ -347,7 +386,7 @@ language sql stable security definer set search_path = public as $$
          round(max(x.moy) over (partition by x.enseignement_id), 2)
   from public.calcul_moyennes_ens(p_classe, p_periode) x
   join enseignements en on en.id = x.enseignement_id
-  where x.moy is not null and public.est_personnel()
+  where x.moy is not null and public.voit_notes_ens(x.enseignement_id)
 $$;
 
 -- Moyenne générale pondérée par le coefficient de chaque matière ; rang (ex æquo = même rang).
@@ -365,7 +404,7 @@ language sql stable security definer set search_path = public as $$
          (rank() over (order by round(g.m, 2) desc))::int,
          round(avg(g.m) over (), 2), round(min(g.m) over (), 2), round(max(g.m) over (), 2)
   from g
-  where public.est_personnel()
+  where public.voit_toute_la_classe(p_classe)
   order by 4, 1
 $$;
 
@@ -391,17 +430,17 @@ language sql stable security definer set search_path = public as $$
          coalesce(a.nb, 0), round(a.m, 2), round(a.m)::smallint,
          coalesce(o.niveau, round(a.m)::smallint), o.niveau is not null
   from a full join o on o.eleve_id = a.eleve_id and o.competence_id = a.competence_id
-  where public.est_personnel()
+  where public.voit_toute_la_classe(p_classe)
 $$;
 
 -- ---------- Droits sur les fonctions ----------
 revoke all on function
-  public.periode_est_verrouillee(uuid), public.peut_noter(uuid), public.peut_noter_eval(uuid), public.peut_bilan(uuid),
+  public.periode_est_verrouillee(uuid), public.peut_noter(uuid), public.peut_noter_eval(uuid), public.peut_bilan(uuid), public.voit_toute_la_classe(uuid), public.voit_notes_ens(uuid), public.voit_notes_eval(uuid), public.voit_bilan_eleve(uuid),
   public.saisir_notes(uuid, jsonb), public.saisir_acquisitions(uuid, jsonb),
   public.calcul_moyennes_ens(uuid, uuid), public.moyennes_matieres(uuid, uuid), public.moyennes_generales(uuid, uuid),
   public.bilan_competences(uuid, uuid) from public, anon, authenticated;
 grant execute on function
-  public.periode_est_verrouillee(uuid), public.peut_noter(uuid), public.peut_noter_eval(uuid), public.peut_bilan(uuid),
+  public.periode_est_verrouillee(uuid), public.peut_noter(uuid), public.peut_noter_eval(uuid), public.peut_bilan(uuid), public.voit_toute_la_classe(uuid), public.voit_notes_ens(uuid), public.voit_notes_eval(uuid), public.voit_bilan_eleve(uuid),
   public.saisir_notes(uuid, jsonb), public.saisir_acquisitions(uuid, jsonb),
   public.moyennes_matieres(uuid, uuid), public.moyennes_generales(uuid, uuid), public.bilan_competences(uuid, uuid) to authenticated;
 -- calcul_moyennes_ens reste interne : appelée seulement par les fonctions ci-dessus.

@@ -398,11 +398,11 @@ await test('saisie : un élève d’une autre classe est refusé, et rien n’es
   return !a.ok && a.err.includes('pas dans la classe') && Number(k.valeur) === 12; });
 await test('un autre professeur ne saisit pas dans l’évaluation d’un collègue', async () => {
   const r = await saisir('prof2', await evid('Course longue'), [{ eleve_id: sarah, valeur: '1' }]); return !r.ok; });
-await test('élève et visiteur ne voient aucune note ni compétence ; la vie scolaire les lit', async () => {
+await test('élève et visiteur ne voient aucune note ni compétence ; la direction les lit', async () => {
   const noms = ['evaluations', 'notes', 'acquisitions', 'bilans_competences'];
   for (const t of noms) { const e = await as('eleve', `select * from ${t}`); const a = await as('anon', `select * from ${t}`);
     if ((e.ok && e.res.rows.length) || (a.ok && a.res.rows.length)) return `fuite sur ${t}`; }
-  const v = await as('vs2', 'select * from notes'); return v.ok && v.res.rows.length > 0; });
+  const v = await as('dir', 'select * from notes'); return v.ok && v.res.rows.length > 0; });
 await test('réglages des couleurs : 18 et 8 par défaut, lisibles par les professeurs', async () => {
   const r = await as('prof', `select cle, valeur #>> '{}' as v from parametres where cle in ('note_seuil_haut','note_seuil_bas')`);
   const m = Object.fromEntries((r.res?.rows || []).map(x => [x.cle, x.v])); return m.note_seuil_haut === '18' && m.note_seuil_bas === '8'; });
@@ -413,25 +413,25 @@ for (const [titre, date, bareme, coef] of [['Contrôle 1', '2026-10-20', 20, 1],
 await saisir('prof2', await evid('Contrôle 1'), [{ eleve_id: sarah, valeur: '10' }, { eleve_id: adam, valeur: '14' }]);
 await saisir('prof2', await evid('Interro 2'), [{ eleve_id: sarah, valeur: '8' }, { eleve_id: adam, statut: 'absent' }]);
 await test('moyenne d’une matière : notes ramenées sur 20 et pondérées, absent ignoré', async () => {
-  const m = await moyMat('vs2', null, ensMath); const s = de(m, sarah), a = de(m, adam);
+  const m = await moyMat('dir', null, ensMath); const s = de(m, sarah), a = de(m, adam);
   return Number(s.moyenne) === 14 && Number(a.moyenne) === 14 && s.nb_notes === 2 && a.nb_notes === 1; });
 await test('moyenne générale : coefficients des matières, rang et statistiques de classe', async () => {
-  const g = await moyGen('vs2', null); const s = de(g, sarah), a = de(g, adam);
+  const g = await moyGen('dir', null); const s = de(g, sarah), a = de(g, adam);
   return Number(s.moyenne) === 14.8 && s.rang === 1 && Number(a.moyenne) === 13.2 && a.rang === 2
     && Number(s.moyenne_classe) === 14 && Number(s.minimum) === 13.2 && Number(s.maximum) === 14.8; });
 await test('un devoir non rendu compte 0 ; dispensé est ignoré ; le réglage change le calcul', async () => {
   await as('prof2', `insert into evaluations(enseignement_id, titre, date_eval) values ('${ensMath}', 'Devoir maison', '2026-11-20')`);
   await saisir('prof2', await evid('Devoir maison'), [{ eleve_id: sarah, statut: 'dispense' }, { eleve_id: adam, statut: 'non_rendu' }]);
-  const m = await moyMat('vs2', null, ensMath); const g = await moyGen('vs2', null);
+  const m = await moyMat('dir', null, ensMath); const g = await moyGen('dir', null);
   const ok1 = Number(de(m, adam).moyenne) === 7 && Number(de(m, sarah).moyenne) === 14 && Number(de(m, adam).moyenne_classe) === 10.5 && Number(de(g, adam).moyenne) === 9;
   await as('dir', `update parametres set valeur='false' where cle='note_non_rendu_compte_zero'`);
-  const m2 = await moyMat('vs2', null, ensMath);
+  const m2 = await moyMat('dir', null, ensMath);
   await as('dir', `update parametres set valeur='true' where cle='note_non_rendu_compte_zero'`);
   return ok1 && Number(de(m2, adam).moyenne) === 14; });
 await test('moyennes par période et sur l’année', async () => {
   await as('prof2', `insert into evaluations(enseignement_id, titre, date_eval) values ('${ensMath}', 'Contrôle T2', '2027-01-20')`);
   await saisir('prof2', await evid('Contrôle T2'), [{ eleve_id: sarah, valeur: '20' }]);
-  const t1 = de(await moyMat('vs2', T1, ensMath), sarah), t2 = de(await moyMat('vs2', T2, ensMath), sarah), an = de(await moyMat('vs2', null, ensMath), sarah);
+  const t1 = de(await moyMat('dir', T1, ensMath), sarah), t2 = de(await moyMat('dir', T2, ensMath), sarah), an = de(await moyMat('dir', null, ensMath), sarah);
   return Number(t1.moyenne) === 14 && Number(t2.moyenne) === 20 && Number(an.moyenne) === 15.5; });
 await test('un élève ou un visiteur ne peut calculer aucune moyenne', async () => {
   const a = await as('eleve', `select * from moyennes_generales('${cl5}', null)`); const b = await as('anon', `select * from moyennes_generales('${cl5}', null)`);
@@ -480,12 +480,12 @@ await test('compétences : niveaux saisis, un niveau sur une compétence non li�
   const d = await as('prof', `select saisir_acquisitions('${ev1}', '${JSON.stringify([{ eleve_id: sarah, competence_id: d14, niveau: 5 }])}'::jsonb) as n`);
   return a.ok && a.res.rows[0].n === 2 && b.ok && !c.ok && !d.ok; });
 await test('bilan : niveau proposé = moyenne arrondie des niveaux saisis', async () => {
-  const r = await as('vs2', `select * from bilan_competences('${cl5}', '${T1}') where competence_id='${d14}'`); const s = de(r.res.rows, sarah), a = de(r.res.rows, adam);
+  const r = await as('dir', `select * from bilan_competences('${cl5}', '${T1}') where competence_id='${d14}'`); const s = de(r.res.rows, sarah), a = de(r.res.rows, adam);
   return Number(s.moyenne) === 3.5 && s.niveau_propose === 4 && s.niveau_retenu === 4 && s.nb === 2 && a.niveau_propose === 2 && s.modifie === false; });
 await test('bilan : seul le professeur principal de la classe (ou la direction) corrige un niveau', async () => {
   const ins = (u, e) => as(u, `insert into bilans_competences(eleve_id, competence_id, periode_id, niveau) values ('${e}', '${d14}', '${T1}', 1)`);
   const a = await ins('prof', sarah), b = await ins('prof2', lina), c = await ins('prof2', sarah);
-  const r = await as('vs2', `select * from bilan_competences('${cl5}', '${T1}') where competence_id='${d14}'`); const s = de(r.res.rows, sarah);
+  const r = await as('dir', `select * from bilan_competences('${cl5}', '${T1}') where competence_id='${d14}'`); const s = de(r.res.rows, sarah);
   return !a.ok && !b.ok && c.ok && s.niveau_propose === 4 && s.niveau_retenu === 1 && s.modifie === true; });
 await test('un élève ne lit pas le bilan de compétences', async () => {
   const r = await as('eleve', `select * from bilan_competences('${cl5}', '${T1}')`); return !r.ok || r.res.rows.length === 0; });
@@ -494,6 +494,30 @@ await test('un élève ne lit pas le bilan de compétences', async () => {
 const lire = f => readFileSync(new URL('../dev_only/' + f, import.meta.url), 'utf8');
 await db.exec(`grant usage on schema public to anon`);   // état par défaut de Supabase
 await test('avant l’accès libre, un visiteur ne voit aucun élève', async () => { const r = await as('anon', 'select * from eleves'); return !r.ok || r.res.rows.length === 0; });
+
+// ---------- Visibilité des notes (réglage notes_visibles_tout_personnel) ----------
+await test('visibilité : un professeur ne lit que les notes de sa matière (EPS), pas celles de la matière d’un collègue', async () => {
+  const e = await as('prof', `select distinct enseignement_id from evaluations`); const ids = e.res.rows.map(r => r.enseignement_id);
+  const n = await as('prof', `select count(*)::int c from notes`); const mm = await as('prof', `select * from moyennes_matieres('${cl5}', null)`);
+  return e.ok && ids.length > 0 && ids.every(i => i === ensEps) && n.res.rows[0].c > 0 && mm.res.rows.every(r => r.enseignement_id === ensEps); });
+await test('visibilité : un professeur simple n’a ni moyenne générale ni bilan de classe', async () => {
+  const g = await as('prof', `select * from moyennes_generales('${cl5}', null)`); const b = await as('prof', `select * from bilan_competences('${cl5}', '${T1}')`);
+  return g.ok && g.res.rows.length === 0 && b.ok && b.res.rows.length === 0; });
+await test('visibilité : le professeur principal de la classe voit toutes les matières et la moyenne générale', async () => {
+  const e = await as('prof2', `select distinct enseignement_id from evaluations`); const g = await as('prof2', `select * from moyennes_generales('${cl5}', null)`);
+  return e.res.rows.length >= 2 && g.res.rows.length > 0; });
+await test('visibilité : la vie scolaire ne lit pas les notes par défaut', async () => {
+  const n = await as('vs2', 'select * from notes'); const g = await as('vs2', `select * from moyennes_generales('${cl5}', null)`); return n.ok && n.res.rows.length === 0 && g.res.rows.length === 0; });
+await test('visibilité : le réglage « tout le personnel » ouvre la lecture, le retirer la referme', async () => {
+  await as('dir', `update parametres set valeur='true' where cle='notes_visibles_tout_personnel'`);
+  const ouvert = await as('vs2', 'select * from notes'); const gen = await as('vs2', `select * from moyennes_generales('${cl5}', null)`);
+  const eleve = await as('eleve', 'select * from notes');
+  await as('dir', `update parametres set valeur='false' where cle='notes_visibles_tout_personnel'`);
+  const ferme = await as('vs2', 'select * from notes');
+  return ouvert.res.rows.length > 0 && gen.res.rows.length > 0 && eleve.res.rows.length === 0 && ferme.res.rows.length === 0; });
+await test('visibilité : un professeur ne peut pas changer le réglage', async () => {
+  const r = await as('prof', `update parametres set valeur='true' where cle='notes_visibles_tout_personnel' returning cle`); return !r.ok || r.res.rows.length === 0; });
+
 await db.exec(lire('acces_libre.sql'));
 await test('accès libre : un visiteur voit les élèves et peut lancer le contrôle d’import', async () => {
   const a = await as('anon', 'select * from eleves'); const b = await as('anon', `select controler_import_eleves('[{"nom":"A"}]'::jsonb) as r`);

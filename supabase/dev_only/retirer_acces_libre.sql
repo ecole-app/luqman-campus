@@ -63,6 +63,7 @@ begin
 end $$;
 revoke execute on function
   public.peut_noter(uuid), public.peut_noter_eval(uuid), public.peut_bilan(uuid), public.periode_est_verrouillee(uuid),
+  public.voit_toute_la_classe(uuid), public.voit_notes_ens(uuid), public.voit_notes_eval(uuid), public.voit_bilan_eleve(uuid),
   public.saisir_notes(uuid, jsonb), public.saisir_acquisitions(uuid, jsonb),
   public.moyennes_matieres(uuid, uuid), public.moyennes_generales(uuid, uuid), public.bilan_competences(uuid, uuid) from anon;
 revoke all on public.competences, public.evaluations, public.evaluation_competences,
