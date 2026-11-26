@@ -15,6 +15,7 @@ await db.exec(`
 await db.exec(readFileSync(new URL('../migrations/0001_fondations.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0002_donnees_etablissement.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0003_vie_scolaire.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../migrations/0004_vie_scolaire_complements.sql', import.meta.url), 'utf8'));
 
 const U = { gest:'00000000-0000-0000-0000-000000000001', dir:'00000000-0000-0000-0000-000000000002',
   prof:'00000000-0000-0000-0000-000000000003', eleve:'00000000-0000-0000-0000-000000000004',
@@ -214,6 +215,140 @@ await test('téléphone non déposé : une observation est créée ; à partir d
 await test('les changements de présence sont écrits au journal avec leur auteur', async () => {
   const r = await db.query(`select count(*)::int n from journal_audit where table_nom='presences' and auteur='${U.prof}' and operation='UPDATE'`); return r.rows[0].n >= 4; });
 
+// ---------- Étape 2 (compléments) ----------
+const nouveauCours = async (ens, debutMin, extra = '') => (await db.query(
+  `insert into cours(enseignement_id, debut, fin${extra ? ', ' + extra.split('=')[0] : ''}) select ${ens}, now() + interval '${debutMin} minutes', now() + interval '${debutMin + 55} minutes'${extra ? ', ' + extra.split('=')[1] : ''} from ids returning id`)).rows[0].id;
+const statutDe = async (cours, eleve) => (await db.query(`select * from presences where cours_id='${cours}' and eleve_id='${eleve}'`)).rows[0];
+
+await test('appel validé : le professeur ne peut plus modifier une présence', async () => {
+  const r = await as('prof', `update presences set statut='absent' where cours_id='${C1}' and eleve_id='${adam}'`); return !r.ok && /correction/.test(r.err); });
+await test('correction : refusée au professeur et sans motif, acceptée par la vie scolaire avec heure réelle, tracée', async () => {
+  const pid = (await statutDe(C1, adam)).id;
+  const a = await as('prof', `select corriger_presence('${pid}', 'retard', 'erreur')`);
+  const b = await as('vs2', `select corriger_presence('${pid}', 'retard', '  ')`);
+  const c = await as('vs2', `select corriger_presence('${pid}', 'retard', 'Arrivé en retard, oubli du prof', (select debut + interval '7 minutes' from cours where id='${C1}'))`);
+  const x = await statutDe(C1, adam); const k = await db.query(`select count(*)::int n from corrections_presence where presence_id='${pid}' and auteur_id='${U.vs2}'`);
+  return !a.ok && !b.ok && c.ok && x.statut === 'retard' && x.minutes_retard === 10 && k.rows[0].n === 1; });
+await test('justification : le professeur ne peut pas justifier, la vie scolaire oui (qui et quand)', async () => {
+  await as('vs2', `update presences set statut='absent' where cours_id='${C2}' and eleve_id='${adam}'`);
+  await as('prof2', `update presences set justifiee=true, justificatif_recu=true where cours_id='${C2}'`);
+  const a = await statutDe(C2, adam);
+  const r = await as('vs2', `select justifier_absences(array[(select id from presences where cours_id='${C2}' and eleve_id='${adam}')], true, 'Malade', true) as n`);
+  const b = await statutDe(C2, adam);
+  return a.justifiee === false && r.ok && r.res.rows[0].n === 1 && b.justifiee === true && b.justificatif_recu === true && b.justifie_par === U.vs2 && b.motif === 'Malade'; });
+await test('un professeur ne crée pas d’absence prévue', async () => {
+  const r = await as('prof', `insert into absences_prevues(eleve_id, debut, fin, motif) values ('${sarah}', now(), now() + interval '1 hour', 'x')`); return !r.ok; });
+let C4, C5;
+await test('absence prévue : l’élève est pré-rempli « absent justifié » à l’ouverture de l’appel', async () => {
+  C5 = await nouveauCours('ens_prof', 240);
+  await as('vs2', `insert into absences_prevues(eleve_id, debut, fin, type, motif, justificatif_recu) values ('${adam}', now() + interval '3 hours', now() + interval '6 hours', 'rendez_vous', 'Orthodontiste', true)`);
+  const r = await as('prof', `select ouvrir_appel('${C5}')`); const a = await statutDe(C5, adam), s = await statutDe(C5, sarah);
+  return r.ok && a.statut === 'absent' && a.justifiee && a.justificatif_recu && a.motif === 'Rendez-vous : Orthodontiste' && s.statut === 'present'; });
+await test('absence prévue saisie après l’ouverture : l’appel non validé est mis à jour', async () => {
+  C4 = await nouveauCours('ens_prof', 120); await as('prof', `select ouvrir_appel('${C4}')`);
+  await as('vs2', `insert into absences_prevues(eleve_id, debut, fin, type, motif) values ('${sarah}', now() + interval '1 hour', now() + interval '3 hours', 'sortie_pedagogique', 'Musée')`);
+  const s = await statutDe(C4, sarah); return s.statut === 'absent' && s.justifiee && s.motif === 'Sortie pédagogique : Musée'; });
+await test('hors ligne : l’heure du téléphone est retenue (retard de 10 min) et la saisie marquée', async () => {
+  const r = await as('prof2', `select synchroniser_presences('${C3}', jsonb_build_array(jsonb_build_object('eleve_id','${adam}','statut','retard','heure', (select (debut + interval '10 minutes')::text from cours where id='${C3}')))) as r`);
+  const a = await statutDe(C3, adam); return r.ok && r.res.rows[0].r.appliques === 1 && a.minutes_retard === 10 && a.saisie_hors_ligne === true; });
+await test('hors ligne : une heure dans le futur est ramenée à l’heure du serveur', async () => {
+  await as('prof2', `select synchroniser_presences('${C3}', jsonb_build_array(jsonb_build_object('eleve_id','${sarah}','statut','retard','heure', (now() + interval '1 hour')::text)))`);
+  const s = await statutDe(C3, sarah); return s.minutes_retard >= 35 && Math.abs(new Date(s.heure_evenement) - Date.now()) < 120000; });
+await test('hors ligne : rien n’est appliqué si l’appel a été validé entre-temps', async () => {
+  const r = await as('prof', `select synchroniser_presences('${C1}', jsonb_build_array(jsonb_build_object('eleve_id','${sarah}','statut','absent')))  as r`);
+  return r.ok && r.res.rows[0].r.appliques === 0 && /validé/.test(r.res.rows[0].r.raison); });
+await test('un client ne peut pas se marquer « saisie hors ligne » lui-même', async () => {
+  await as('prof', `update presences set saisie_hors_ligne=true where cours_id='${C4}'`); const s = await statutDe(C4, adam); return s.saisie_hors_ligne === false; });
+let C6, C7;
+await test('cours annulé : plus dans les appels manquants, appel impossible ; le professeur ne peut pas annuler', async () => {
+  C6 = await nouveauCours('ens_prof2', -50);
+  const av = await as('vs2', `select cours_id from appels_manquants() where cours_id='${C6}'`);
+  const a = await as('prof2', `select annuler_cours('${C6}', true, 'Absent')`);
+  const b = await as('vs2', `select annuler_cours('${C6}', true, 'Professeur absent')`);
+  const ap = await as('vs2', `select cours_id from appels_manquants() where cours_id='${C6}'`);
+  const c = await as('vs2', `select ouvrir_appel('${C6}')`);
+  return av.res.rows.length === 1 && !a.ok && b.ok && ap.res.rows.length === 0 && !c.ok && /annulé/.test(c.err); });
+await test('remplaçant : il fait l’appel du cours et c’est lui qu’on relance', async () => {
+  C7 = await nouveauCours('ens_prof', -40);
+  const a = await as('prof2', `select ouvrir_appel('${C7}')`);
+  const b = await as('vs2', `select remplacer_cours('${C7}', '${U.prof2}')`);
+  const c = await as('prof2', `select ouvrir_appel('${C7}')`);
+  const m = await as('vs2', `select professeur_id from appels_manquants() where cours_id='${C7}'`);
+  return !a.ok && b.ok && c.ok && m.res.rows[0].professeur_id === U.prof2; });
+await test('liste des professeurs : réservée au personnel connecté', async () => {
+  const a = await as('vs2', 'select * from liste_professeurs()'); const b = await as('eleve', 'select * from liste_professeurs()');
+  return a.ok && a.res.rows.length >= 2 && (!b.ok || b.res.rows.length === 0); });
+await test('jour fermé (vacances) : pas d’appel manquant ce jour-là ; un professeur ne saisit pas le calendrier', async () => {
+  const p = await as('prof', `insert into fermetures(debut, fin, motif) values (current_date, current_date, 'x')`);
+  await as('dir', `insert into fermetures(debut, fin, motif) values (current_date, current_date, 'Journée pédagogique')`);
+  const m = await as('vs2', 'select * from appels_manquants()');
+  await as('dir', `delete from fermetures`);
+  const m2 = await as('vs2', 'select * from appels_manquants()');
+  return !p.ok && m.res.rows.length === 0 && m2.res.rows.length >= 1; });
+await test('groupe : l’appel ne liste que les élèves du groupe ; un professeur ne crée pas de groupe', async () => {
+  const p = await as('prof', `insert into groupes(classe_id, nom) select classe, 'X' from ids`);
+  const g = (await as('vs2', `insert into groupes(classe_id, nom) values ((select id from classes where nom='5e A'), 'Groupe 1') returning id`)).res.rows[0].id;
+  await as('vs2', `insert into groupe_eleves(groupe_id, eleve_id) values ('${g}', '${sarah}')`);
+  const c = await nouveauCours('ens_prof', 300, `groupe_id='${g}'`);
+  const r = await as('prof', `select ouvrir_appel('${c}') as n`);
+  return !p.ok && r.ok && r.res.rows[0].n === 1 && (await statutDe(c, sarah)).statut === 'present'; });
+let RET;
+await test('retenue d’un professeur : demande, heures obligatoires, il ne peut pas la valider lui-même', async () => {
+  const a = await as('prof', `insert into punitions(eleve_id, type, motif) values ('${sarah}', 'Retenue', 'Insolence')`);
+  const b = await as('prof', `insert into punitions(eleve_id, type, motif, duree_heures, statut) values ('${sarah}', 'Retenue', 'Insolence', 2, 'faite') returning id, statut`);
+  RET = b.res?.rows?.[0]?.id;
+  await as('prof', `update punitions set statut='a_faire' where id='${RET}'`);
+  const x = (await db.query(`select statut from punitions where id='${RET}'`)).rows[0].statut;
+  return !a.ok && /heures/.test(a.err) && b.ok && b.res.rows[0].statut === 'demandee' && x === 'demandee'; });
+await test('retenue : la vie scolaire la place sur une séance puis pointe la présence', async () => {
+  const s = (await as('vs2', `insert into seances_retenue(debut, fin, salle, surveillant) values (now() + interval '2 days', now() + interval '2 days 2 hours', 'Salle 3', 'M. Kaci') returning id`)).res.rows[0].id;
+  const a = await as('vs2', `update punitions set seance_id='${s}', statut='a_faire' where id='${RET}' returning statut`);
+  const b = await as('prof', `update punitions set presence_retenue='present' where id='${RET}'`);
+  const c = await as('vs2', `update punitions set presence_retenue='present', statut='faite' where id='${RET}' returning statut, presence_retenue`);
+  return a.ok && a.res.rows[0].statut === 'a_faire' && c.ok && c.res.rows[0].statut === 'faite' && c.res.rows[0].presence_retenue === 'present'; });
+await test('sanction : refusée au professeur, décidée par la direction', async () => {
+  const a = await as('prof', `insert into punitions(eleve_id, nature, type, motif) values ('${adam}', 'sanction', 'Avertissement', 'Violence verbale')`);
+  const b = await as('dir', `insert into punitions(eleve_id, nature, type, motif) values ('${adam}', 'sanction', 'Avertissement', 'Violence verbale') returning id`);
+  return !a.ok && /direction/.test(a.err) && b.ok; });
+await test('incident : rédigé par un professeur, lu par la vie scolaire, pas par un collègue ni un élève', async () => {
+  const i = (await as('prof', `insert into incidents(lieu, description) values ('Cour', 'Bagarre') returning id`)).res.rows[0].id;
+  const a = await as('prof', `insert into incident_eleves(incident_id, eleve_id, role) values ('${i}', '${adam}', 'auteur'), ('${i}', '${sarah}', 'victime')`);
+  const b = await as('prof2', 'select * from incidents'); const c = await as('vs2', `select * from incident_eleves where incident_id='${i}'`);
+  const d = await as('eleve', 'select * from incidents');
+  return a.ok && (!b.ok || b.res.rows.length === 0) && c.res.rows.length === 2 && (!d.ok || d.res.rows.length === 0); });
+await test('infirmerie : heure d’arrivée du serveur, lecture vie scolaire seulement', async () => {
+  const a = await as('prof', `insert into passages_infirmerie(eleve_id, motif, arrivee_a) values ('${sarah}', 'Mal de tête', '2000-01-01')`);
+  const b = await as('prof', 'select * from passages_infirmerie'); const x = (await db.query(`select arrivee_a > now() - interval '1 minute' r from passages_infirmerie`)).rows[0].r;
+  return a.ok && (!b.ok || b.res.rows.length === 0) && x === true; });
+await test('infirmerie : départ « récupéré par la famille » = sortie dans le cours en cours, tracée', async () => {
+  const pid = (await db.query(`select id from passages_infirmerie limit 1`)).rows[0].id;
+  const a = await as('prof', `select infirmerie_depart('${pid}', 'retour_classe')`);
+  const b = await as('vs2', `select infirmerie_depart('${pid}', 'recupere_famille')`);
+  const c = await as('vs2', `select infirmerie_depart('${pid}', 'recupere_famille', 'La mère')`);
+  const p = (await db.query(`select p.statut, p.recupere_par from presences p join cours c on c.id=p.cours_id where p.eleve_id='${sarah}' and c.debut <= now() and c.fin > now() order by c.debut desc limit 1`)).rows[0];
+  const k = await db.query(`select count(*)::int n from corrections_presence where motif like 'Départ depuis%'`);
+  return !a.ok && !b.ok && c.ok && p.statut === 'sortie' && p.recupere_par === 'La mère' && k.rows[0].n === 1; });
+await test('observation confidentielle : invisible pour un collègue, visible pour la vie scolaire et son auteur', async () => {
+  await as('prof', `insert into observations(eleve_id, type, texte, confidentielle) values ('${sarah}', 'autre', 'Situation familiale', true)`);
+  const a = await as('prof2', `select * from observations where confidentielle`); const b = await as('vs2', `select * from observations where confidentielle`);
+  const c = await as('prof', `select * from observations where confidentielle`);
+  return a.res.rows.length === 0 && b.res.rows.length === 1 && c.res.rows.length === 1; });
+await test('élèves à surveiller : seuil de retards réglable ; rien pour un élève', async () => {
+  await as('dir', `update parametres set valeur='1' where cle='retards_seuil_alerte'`);
+  const r = await as('vs2', 'select * from eleves_a_surveiller()'); const e = await as('eleve', 'select * from eleves_a_surveiller()');
+  await as('dir', `update parametres set valeur='3' where cle='retards_seuil_alerte'`);
+  const s = r.res?.rows?.find(x => x.eleve_id === sarah);
+  return r.ok && s && s.motifs.includes('retards') && (!e.ok || e.res.rows.length === 0); });
+await test('élèves à surveiller : demi-journées d’absence non justifiées du mois', async () => {
+  await as('dir', `update parametres set valeur='1' where cle='absences_demi_journees_seuil'`);
+  await as('vs2', `update presences set statut='absent' where cours_id='${C7}' and eleve_id='${adam}'`);
+  const r = await as('vs2', 'select * from eleves_a_surveiller()');
+  await as('dir', `update parametres set valeur='4' where cle='absences_demi_journees_seuil'`);
+  const a = r.res?.rows?.find(x => x.eleve_id === adam); return r.ok && a && a.demi_journees_mois >= 1 && a.motifs.includes('absences'); });
+await test('statistiques d’absentéisme par classe', async () => {
+  const r = await as('vs2', `select * from stats_absenteisme(current_date - 1, current_date + 1) where classe='5e A'`);
+  const x = r.res?.rows?.[0]; return r.ok && x.saisies > 0 && x.absences >= 1 && Number(x.taux_absence) > 0; });
+
 // ---------- Accès libre de test : ouverture puis retrait ----------
 const lire = f => readFileSync(new URL('../dev_only/' + f, import.meta.url), 'utf8');
 await db.exec(`grant usage on schema public to anon`);   // état par défaut de Supabase
@@ -229,7 +364,17 @@ await test('accès libre : appel, cours fictifs du jour et coffre fonctionnent s
   const e = await as('anon', `update presences set statut='absent' where cours_id='${c.res?.rows?.[0]?.id}' and eleve_id='${adam}' returning statut`);
   const f = await as('anon', `insert into observations(eleve_id,type,texte) values ('${adam}','autre','test libre') returning id`);
   return a.ok && a.res.rows[0].n > 0 && b.ok && b.res.rows[0].n > 0 && d.ok && e.ok && e.res.rows.length === 1 && f.ok; });
+await test('accès libre : justification, surveillance et calendrier fonctionnent sans connexion', async () => {
+  const a = await as('anon', 'select * from eleves_a_surveiller()'); const b = await as('anon', `insert into fermetures(debut, fin, motif) values (current_date + 100, current_date + 101, 'Test') returning id`);
+  const c = await as('anon', 'select * from liste_professeurs()');
+  return a.ok && b.ok && (!c.ok || c.res.rows.length === 0); });
 await db.exec(lire('retirer_acces_libre.sql'));
+await test('après le retrait : plus de calendrier, d’infirmerie ni de surveillance sans connexion', async () => {
+  const a = await as('anon', 'select * from fermetures'); const b = await as('anon', 'select * from eleves_a_surveiller()');
+  const c = await as('anon', `insert into passages_infirmerie(eleve_id) values ('${sarah}')`);
+  return (!a.ok || a.res.rows.length === 0) && !b.ok && !c.ok; });
+await test('après le retrait : le remplaçant garde le droit de faire l’appel', async () => { const c = await nouveauCours('ens_prof', 600, `remplacant_id='${U.prof2}'`);
+  const r = await as('prof2', `select ouvrir_appel('${c}') as n`); return r.ok && r.res.rows[0].n === 2; });
 await test('après le retrait : plus d’appel ni de coffre sans connexion, fonction de test supprimée', async () => {
   const a = await as('anon', 'select * from presences'); const b = await as('anon', `select deposer_telephone('${sarah}', 'C1')`); const c = await as('anon', 'select dev_creer_cours_du_jour()');
   return (!a.ok || a.res.rows.length === 0) && !b.ok && !c.ok; });

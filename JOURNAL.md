@@ -42,3 +42,21 @@
 - Écrans dans `app/vie-scolaire.js` : Appel, Suivi du jour, Téléphones, Punitions. Pensé pour téléphone (gros boutons).
 - **À retirer avant 0b** : `retirer_acces_libre.sql` couvre aussi l'étape 2 (testé) et supprime `dev_creer_cours_du_jour`.
 - Pas encore fait : notifications push réelles (appel manquant), mode hors ligne.
+
+## 2026-11-26 — Étape 2 approfondie (branche `etape-2-complements`, en attente d'installation)
+Demande d'Ahmed : aller au bout de l'étape 2 pour ne pas y revenir. Tout fait sauf les notifications push (rien de mis en place côté envoi ; à reprendre plus tard).
+- Migration `0004_vie_scolaire_complements.sql` :
+  - **hors ligne** : `synchroniser_presences` accepte l'heure du téléphone, bornée (pas dans le futur, pas avant le cours, au plus `hors_ligne_tolerance_min` = 240 min en arrière), saisie marquée ;
+  - **appel validé verrouillé** : seule la vie scolaire corrige (`corriger_presence`, motif obligatoire, heure réelle possible, table `corrections_presence`) ;
+  - **justification** des absences et retards (vie scolaire seulement : qui, quand, justificatif reçu) ;
+  - **absences prévues** (rendez-vous, sortie pédagogique…) : pré-remplies « absent justifié » dans l'appel, même s'il est déjà ouvert ;
+  - **cours annulés / remplaçant** (le remplaçant fait l'appel et c'est lui qu'on relance), **groupes** (l'appel ne liste que le groupe), **jours sans cours** (`fermetures`, exclus des appels manquants) ;
+  - **retenues complètes** : demande du professeur → la vie scolaire la place sur une séance → pointage présent / absent ; **sanctions** réservées à la direction (échelle réglable `sanctions_echelle`) ; **rapports d'incident** avec élèves impliqués (auteur, victime, témoin) ;
+  - **infirmerie** (heures serveur, registre visible vie scolaire / direction seulement ; « récupéré par la famille » = sortie dans le cours en cours, tracée) ;
+  - **observations confidentielles** (auteur + vie scolaire) ; **élèves à surveiller** (seuils réglables : retards de la période, demi-journées non justifiées du mois, téléphones) ; **statistiques d'absentéisme** par classe.
+- Écrans : `app/vie-scolaire.js` (réécrit : appel hors ligne avec file d'attente, correction, annulation / remplaçant / groupe, justification, retenues) et `app/vie-scolaire-2.js` (fiche élève, tableau de bord + export CSV, incidents, infirmerie, calendrier, groupes). Appel plus compact sur téléphone (5 boutons sur une ligne).
+- PWA : `sw.js` (l'appli s'ouvre sans réseau), `manifest.webmanifest`, icônes (installable sur l'écran d'accueil). Librairie Supabase intégrée au dépôt (`app/vendor/`) au lieu du CDN, et sans nouvelles tentatives automatiques (elles bloquaient 8 s par requête hors ligne).
+- Tests : `npm run test:db` = 97 tests verts ; nouveau `npm run test:ecrans` = 40 tests d'écran verts (Chrome format téléphone, faux Supabase, coupure réseau simulée). Les deux tournent sur GitHub.
+- **Pour installer** (depuis un ordinateur) : appliquer `0004` sur Supabase, **puis relancer `supabase/dev_only/acces_libre.sql` en entier** (0004 remet la règle d'appel par rôle, l'accès libre doit être réappliqué), puis fusionner la PR. Ensuite test réel dans le navigateur.
+- Restes : notifications push ; test chronométré d'un appel de 25 élèves sur un vrai téléphone ; points ajoutés à `docs/ETAPE-0B.md` (copie hors ligne, durées de conservation, boutons selon le rôle).
+

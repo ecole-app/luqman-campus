@@ -7,6 +7,10 @@
 <meta name="theme-color" content="#0A2E2A">
 <link rel="icon" href="../icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0A2E2A">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
 <style>
   :root { --vert:#0A2E2A; --or:#D4A017; --sarcelle:#0D9488; --sable:#F6F1E7; --carte:#fff; --texte:#1c2b29; --doux:#5d6b68; --filet:#e4dccb; --rouge:#b3261e; --ok:#1b7a4b; }
@@ -56,10 +60,11 @@
 <nav id="nav"></nav>
 <main id="vue"><p class="doux">Chargement…</p></main>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="vendor/supabase-2.119.2.js"></script>
 <script src="config.js"></script>
 <script>
-const sb = supabase.createClient(window.LC.url, window.LC.key, { auth: { persistSession: false } });
+// Pas de nouvelles tentatives automatiques (8 s d'attente hors ligne) : une saisie qui échoue part dans la file hors ligne.
+const sb = supabase.createClient(window.LC.url, window.LC.key, { auth: { persistSession: false }, db: { retry: false, timeout: 10000 } });
 if (window.LC.modeTest) document.getElementById('bandeau').hidden = false;
 if (window.self !== window.top) document.body.classList.add('cadre');
 
@@ -78,8 +83,14 @@ async function charger() {
     sb.from('annees_scolaires').select('id,libelle').eq('active', true).maybeSingle()
   ]);
   const erreur = [c, e, m, n, a].find(r => r.error);
-  if (erreur) { $('#vue').innerHTML = `<div class="msg err">Impossible de lire la base : ${esc(erreur.error.message)}</div>`; return false; }
+  if (erreur) {
+    // Hors ligne : on reprend la dernière copie gardée sur cet appareil (l'appel reste possible).
+    let copie = null; try { copie = JSON.parse(localStorage.getItem('lc_cache_base')); } catch { /* rien */ }
+    if (copie) { Object.assign(S, copie); S.horsLigne = true; return true; }
+    $('#vue').innerHTML = `<div class="msg err">Impossible de lire la base : ${esc(erreur.error.message)}</div>`; return false;
+  }
   S.classes = c.data; S.eleves = e.data; S.matieres = m.data; S.ens = n.data; S.annee = a.data;
+  try { localStorage.setItem('lc_cache_base', JSON.stringify({ classes: S.classes, eleves: S.eleves, matieres: S.matieres, ens: S.ens, annee: S.annee })); } catch { /* stockage indisponible */ }
   return true;
 }
 const nomClasse = id => (S.classes.find(c => c.id === id) || {}).nom || '—';
@@ -257,8 +268,10 @@ function liensExport() {
 const VUES = { eleves: vueEleves, classes: vueClasses, matieres: vueMatieres, import: vueImport, export: vueExport };
 const LIENS = { eleves: liensEleves, classes: liensClasses, matieres: liensMatieres, import: liensImport, export: liensExport };
 window.__LC = { S, lireCSV, dessiner };
-charger().then(ok => ok && dessiner());
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
-<script src="vie-scolaire.js?v=3"></script>
+<script src="vie-scolaire.js?v=4"></script>
+<script src="vie-scolaire-2.js?v=4"></script>
+<script>charger().then(ok => ok && dessiner());</script>
 </body>
 </html>
