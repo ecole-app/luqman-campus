@@ -24,6 +24,7 @@ Chaque point indique ce qui est fait aujourd'hui et ce qu'il faut décider.
 14. **Longueur des appréciations.** 400 caractères maximum (éléments du programme : 600). *Décider.*
 15. **Propositions automatiques d'appréciations.** Aujourd'hui : règles fixes dans l'appli (moyenne, évolution, travaux non rendus, absences), sans IA externe, aucune donnée ne sort. Une vraie IA (ex. Gemini) enverrait des données d'élèves à un service tiers : *décider si on l'autorise (RGPD, information des familles) avant de la brancher.*
 16. **En-tête et signatures.** Nom et adresse exacts du collège, logo, mentions légales ; cases de signature (professeur principal, direction, responsables légaux). *Fournir les informations.*
+17. **Banque de phrases partagée.** Tout professeur peut corriger les phrases de départ (elles changent alors pour tout le monde) ; seule la direction peut les retirer. *Décider : laisser ainsi, ou réserver la correction des phrases de départ à la direction ?*
 
 ## À compléter aux étapes suivantes
 - Conseil de classe (étape 5) : qui anime, qui voit l'écran projeté.
