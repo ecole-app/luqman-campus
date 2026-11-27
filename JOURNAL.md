@@ -97,3 +97,7 @@ Demande d'Ahmed : aller au bout de l'étape 2 pour ne pas y revenir. Tout fait s
 - Tests : `test:db` 140/140, `test:ecrans` 87/87. Cache `lc-app-v8`, `notes.js?v=4`.
 - **Pour installer** : appliquer `0008` dans l'éditeur SQL, puis relancer `acces_libre.sql` en entier.
 - À valider avec le directeur : qui peut retirer un modèle de la bibliothèque (aujourd'hui son auteur et l'administration) ; durée de conservation de l'historique (étape 0b).
+
+## 2026-11-27 — Correctif : publication d'un modèle sans connexion
+- Trouvé au test réel : en mode test (sans connexion) la publication dans la bibliothèque échouait (`created_by` obligatoire). Migration `0009` : auteur facultatif (rempli automatiquement dès qu'on est connecté). Test ajouté (141/141). Leçon : les tests de base simulent un utilisateur connecté, le mode test sans connexion doit avoir ses propres tests pour chaque nouvelle fonction.
+- **Pour installer** : appliquer `0009` dans l'éditeur SQL.
