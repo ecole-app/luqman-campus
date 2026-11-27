@@ -81,3 +81,11 @@ Demande d'Ahmed : aller au bout de l'étape 2 pour ne pas y revenir. Tout fait s
 - Programmes (pour l'étape 7) : ils changent par niveau et par année — français/maths/langues cycle 4 : BO n° 10 du 5-3-2026 (5e en 2026, 4e en 2027, 3e en 2028) ; EPS et histoire-géo cycles 2-3 : BO n° 22 du 28-5-2026 (EPS 6e : rentrée 2027, ancien programme valable en 2026-27) ; autres matières cycle 4 : BO du 30-7-2020. Principe : table des programmes officiels versionnée (BO, NOR, date, lien), fiches rattachées à un élément officiel, alerte quand un programme est remplacé, validation par la direction.
 - Tests : `test:db` 133/133, `test:ecrans` 65/65. Cache `lc-app-v6`.
 - **Pour installer** : appliquer `0006` dans l'éditeur SQL (pas besoin de relancer `acces_libre.sql`).
+
+## 2026-11-27 — Étape 3 : compléments (rôles, réglages, hors ligne, graphiques)
+- Migration `0007` : `mes_droits_notes()` (admin, classes dont on est prof principal, matières enseignées). L'appli cache les boutons non autorisés (réglages, verrouillage de période, correction du bilan, catalogue, création d'évaluation sur la matière d'un collègue → lecture seule). Les vrais droits restent appliqués par la base.
+- Onglet Notes › **Réglages** (direction) : visibilité des notes (tout le personnel ou non), seuils jaune/rouge, « non rendu compte 0 », noms des 4 niveaux.
+- **Notes hors ligne** : si le réseau coupe pendant la saisie, la note est gardée sur l'appareil (⏳) et part toute seule au retour du réseau (événement `online`, toutes les 20 s, et à l'ouverture de l'onglet). Limite : l'onglet doit avoir été ouvert avec du réseau avant la coupure.
+- **Fiche élève** : courbe d'évolution des notes (/20, moyenne de classe en pointillés, points jaunes/rouges, filtre par matière) et camembert de la répartition des niveaux de compétence (réservé prof principal / direction).
+- Tests : `test:db` 135/135, `test:ecrans` 77/77. Cache `lc-app-v7`, `notes.js?v=3`.
+- Restes étape 3 : historique des notes modifiées (écran sur le journal d'audit), import CSV de notes, copie d'une évaluation vers une autre classe, bibliothèque d'évaluations entre professeurs (étape 7), notes visibles aux familles (phase 2), ouverture à froid de l'onglet Notes sans réseau.
