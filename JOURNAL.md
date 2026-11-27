@@ -121,3 +121,11 @@ Demande d'Ahmed : aller au bout de l'étape 2 pour ne pas y revenir. Tout fait s
 - Chaque professeur peut maintenant **corriger** (✏️) ses phrases et les phrases de départ, plus seulement la direction. « Retirer » reste limité à ses propres phrases (direction : toutes). Migration `0011_phrases_correction_profs.sql` (politiques insert/update/delete séparées, réservées au personnel).
 - Tests : `test:db` 157/157, `test:ecrans` 108/108. Cache `lc-app-v11`, `bulletins.js?v=3`.
 - **Pour installer** : appliquer `0011` dans l'éditeur SQL, puis relancer `acces_libre.sql` en entier (inchangé, mais règle habituelle).
+
+## 2026-11-27 — Étape 4, améliorations (lot 1)
+- **Mise en page du bulletin réglable par la direction** (Bulletins › Aperçu › 🎛 Mettre en page) : ordre et visibilité des 8 blocs, ordre et visibilité des 4 colonnes du tableau, taille compacte, retouche libre du texte sur l'aperçu (par élève, non enregistrée, valable pour l'impression), enregistrement comme mise en page par défaut (paramètre `bulletin_mise_en_page`), retour à la mise en page standard.
+- **Tableau de remplissage de toutes les classes** (direction, Bulletins › Toutes les classes) : progression par classe, reste à faire par matière et professeur, filtre « incomplètes », lien vers le suivi de la classe. RPC `suivi_toutes_classes`.
+- **Historique des appréciations** (bouton 🕘 sous chaque appréciation) : RPC `historique_appreciations` lue dans le journal d'audit.
+- Migration `0012_bulletins_mise_en_page_suivi_historique.sql`. Tests : `test:db` 159/159, `test:ecrans` 120/120. Cache `lc-app-v12`, `bulletins.js?v=4`.
+- **Pour installer** : appliquer `0011` puis `0012` dans l'éditeur SQL, relancer `acces_libre.sql` en entier.
+- **Reste du lot** (décidé avec Ahmed) : bilan de fin de cycle (6e/3e), export PDF en un seul fichier, maquette de l'IA (non branchée, décision RGPD du directeur).

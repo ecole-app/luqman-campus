@@ -9,7 +9,7 @@
   const O = window.LCVS.notesOutils;
   const N = O.N, { fmt, opt, aujourdhui, nomClasse } = O;
   const B = { sub: 'matiere', bsub: 'suivi', classeId: '', ensId: '', periodeId: '', statut: 'ouvert', appr: {}, moy: {}, moyPrev: {}, nr: {}, nbNotes: {},
-    elements: '', data: null, prev: null, suivi: null, phrases: [], apercu: '', ouvertPhrases: null, filtrePhr: '', confirmer: null, modifPhr: null, uid: null, maxAppr: 400, maxElem: 600, mentions: [], avis: {} };
+    elements: '', data: null, prev: null, suivi: null, phrases: [], apercu: '', ouvertPhrases: null, filtrePhr: '', confirmer: null, modifPhr: null, uid: null, mep: null, mepSale: false, mepOuvert: false, retouche: false, retouches: {}, toutes: null, seulIncompletes: false, histoId: '', histo: [], maxAppr: 400, maxElem: 600, mentions: [], avis: {} };
   window.__LC.B = B;
 
   const css = document.createElement('style');
@@ -33,6 +33,9 @@
     .bulletin .bu-pied { margin-top:8px; font-size:10px; color:#777; display:flex; justify-content:space-between; }
     .bulletin .mention { display:inline-block; padding:2px 10px; border-radius:999px; background:#0b5d4b; color:#fff; font-weight:700; }
     .bulletin .note { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+    .bulletin.bu-compact { font-size:11px; line-height:1.25; padding:14px 18px; } .bulletin.bu-compact th, .bulletin.bu-compact td { padding:3px 5px; } .bulletin.bu-compact .bu-bloc { margin-top:6px; padding:5px 8px; } .bulletin.bu-compact .bu-sign div { min-height:44px; }
+    .grille2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; } @media (max-width:700px) { .grille2 { grid-template-columns:1fr; } }
+    #b-rendu [contenteditable=true] { outline:2px dashed #b45309; outline-offset:4px; }
     .bulletin .bu-defile { overflow-x:auto; -webkit-overflow-scrolling:touch; }
     #lc-impression { display:none; }
     @media print {
@@ -141,8 +144,9 @@
     await O.chargerBase();
     const [pr] = await Promise.all([
       sb.from('parametres').select('cle,valeur').in('cle', ['appreciation_longueur_max', 'elements_programme_longueur_max', 'mentions_bulletin', 'etablissement_nom', 'etablissement_adresse', 'bulletin_afficher_rang',
-        'avis_seuil_avertissement', 'avis_compliments', 'avis_felicitations', 'avis_felicitations_min_matiere', 'avis_eloges', 'avis_eloges_min_matiere'])]);
+        'avis_seuil_avertissement', 'avis_compliments', 'avis_felicitations', 'avis_felicitations_min_matiere', 'avis_eloges', 'avis_eloges_min_matiere', 'bulletin_mise_en_page'])]);
     if (!pr.error) B.params = pr.data || [];
+    if (!B.mepSale) B.mep = normMEP(valParam('bulletin_mise_en_page', null));
     B.maxAppr = Number(valParam('appreciation_longueur_max', 400)); B.maxElem = Number(valParam('elements_programme_longueur_max', 600));
     const m = valParam('mentions_bulletin', null); B.mentions = Array.isArray(m) && m.length ? m : ['Éloges', 'Félicitations', 'Compliments', 'Encouragements', 'Avertissement travail', 'Avertissement comportement', 'Avertissement assiduité'];
     B.avis = { avertissement: Number(valParam('avis_seuil_avertissement', 10)), compliments: Number(valParam('avis_compliments', 14)), felicitations: Number(valParam('avis_felicitations', 16)),
@@ -193,6 +197,7 @@
   async function chargerBulletins() {
     await chargerCommun();
     if (B.bsub === 'reglages') return;
+    if (B.bsub === 'toutes') { const r = await sb.rpc('suivi_toutes_classes', { p_periode: B.periodeId }); if (r.error) throw new Error(r.error.message); B.toutes = r.data || []; return; }
     if (B.bsub === 'suivi') { const r = await sb.rpc('suivi_appreciations', { p_classe: B.classeId, p_periode: B.periodeId }); if (r.error) throw new Error(r.error.message); B.suivi = r.data; return; }
     await chargerDonnees();
     if (B.data && !B.data.eleves.some(e => e.id === B.apercu)) B.apercu = (B.data.eleves[0] || {}).id || '';
@@ -230,6 +235,12 @@
     const cats = [...new Set(B.phrases.map(p => p.categorie))];
     return `<div class="ap-phr">${cats.map(c => `<strong style="width:100%;font-size:12px">${esc(c)}</strong>${B.phrases.filter(p => p.categorie === c).map(p => `<button data-phr="${p.id}" data-pour="${id}">${esc(p.texte)}</button>`).join('')}`).join('')}</div>`;
   }
+  function blocHisto(id) {
+    if (B.histoId !== id) return '';
+    const h = B.histo; const dt = t => new Date(t).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    return `<div class="carte" style="background:#fff;margin-top:6px"><strong class="petit">Historique de cette appréciation</strong>${!h.length ? '<p class="petit">Aucune modification enregistrée.</p>' : h.map(x => `<div class="petit" style="margin-top:6px"><strong>${dt(x.horodatage)}</strong> · ${esc(x.auteur)} · ${x.operation === 'INSERT' ? 'saisie' : x.operation === 'DELETE' ? 'effacée' : 'modifiée'}
+      ${x.avant ? `<div style="color:#8a8a8a;text-decoration:line-through">${esc(x.avant)}</div>` : ''}${x.apres ? `<div>${esc(x.apres)}</div>` : ''}</div>`).join('')}</div>`;
+  }
   function vueMatiere() {
     if (!B.ensId) return '<p class="doux">Aucune matière pour cette classe.</p>';
     const ro = !monEns() || fige(), els = elevesClasse();
@@ -240,7 +251,7 @@
       return `<div class="ap-l" data-e="${e.id}"><span class="ap-n">${esc(nomEl(e))}<span class="ap-info">${B.nbNotes[e.id] ? B.nbNotes[e.id] + ' note' + (B.nbNotes[e.id] > 1 ? 's' : '') : 'aucune note'}${B.nr[e.id] ? ' · ' + B.nr[e.id] + ' non rendu' + (B.nr[e.id] > 1 ? 's' : '') : ''}</span></span>
         <span>${m != null ? O.pastille(m) : '<span class="note vide">—</span>'} ${evo}</span>
         <div class="ap-txt"><textarea data-appr="${e.id}" ${ro ? 'disabled' : ''} maxlength="${B.maxAppr + 50}" placeholder="Acquisitions, progrès, difficultés…">${esc(t)}</textarea>
-          <div class="ap-pied">${compteur(t.length, B.maxAppr)}${ro ? '' : ` <button class="lien" data-prop="${e.id}">💡 Proposer</button> <button class="lien" data-ouvphr="${e.id}">📋 Phrases</button>`}<span class="etat"></span></div>${ro ? '' : chipsPhrases(e.id)}</div></div>`;
+          <div class="ap-pied">${compteur(t.length, B.maxAppr)}${ro ? '' : ` <button class="lien" data-prop="${e.id}">💡 Proposer</button> <button class="lien" data-ouvphr="${e.id}">📋 Phrases</button>`} <button class="lien" data-histo="${e.id}">🕘 Historique</button><span class="etat"></span></div>${ro ? '' : chipsPhrases(e.id)}${blocHisto(e.id)}</div></div>`;
     }).join('');
     return `<div class="carte" style="background:#faf7ef"><h3>Principaux éléments du programme travaillés</h3>
         <textarea id="a-elem" ${ro ? 'disabled' : ''} rows="2" style="width:100%" placeholder="Ex. : course de durée, badminton, sauvetage aquatique… (identique pour toute la classe)">${esc(B.elements)}</textarea>
@@ -330,6 +341,12 @@
         else { vides.forEach(x => { B.appr[x.e.id] = x.t; }); dire('ok', `${vides.length} brouillon${vides.length > 1 ? 's' : ''} d’appréciation proposé${vides.length > 1 ? 's' : ''} : relis-les et personnalise-les.`); }
         refaire();
       };
+      document.querySelectorAll('[data-histo]').forEach(b => b.onclick = async () => {
+        if (B.histoId === b.dataset.histo) { B.histoId = ''; return refaire(); }
+        const r = await sb.rpc('historique_appreciations', { p_eleve: b.dataset.histo, p_ens: B.ensId, p_periode: B.periodeId });
+        if (r.error) { dire('err', estReseau(r.error) ? 'Pas de connexion : l’historique a besoin du réseau.' : r.error.message); return refaire(); }
+        B.histo = r.data || []; B.histoId = b.dataset.histo; refaire();
+      });
       document.querySelectorAll('[data-ouvphr]').forEach(b => b.onclick = () => { B.ouvertPhrases = B.ouvertPhrases === b.dataset.ouvphr ? null : b.dataset.ouvphr; refaire(); });
       document.querySelectorAll('[data-phr]').forEach(b => b.onclick = () => {
         const p = B.phrases.find(x => x.id === b.dataset.phr), ta = $(`[data-appr="${b.dataset.pour}"]`);
@@ -374,27 +391,54 @@
   }
 
   // ---------- Bulletin (rendu imprimable) ----------
+  // ---------- Mise en page du bulletin (réglable par la direction) ----------
+  const BLOCS = [['tete', 'En-tête du collège et période'], ['eleve', 'Identité de l’élève et classe'], ['tableau', 'Tableau des matières'], ['socle', 'Composantes du socle'],
+    ['vie', 'Vie scolaire (absences, retards)'], ['generale', 'Appréciation générale et mention'], ['signatures', 'Cases de signatures'], ['pied', 'Pied de page']];
+  const COLS = [['elements', 'Éléments du programme travaillés'], ['moyenne', 'Moyenne de l’élève'], ['classe', 'Moyenne de la classe (min – max)'], ['appreciation', 'Appréciation du professeur']];
+  const ordonner = (voulu, tous) => { const ids = tous.map(x => x[0]); const dans = (Array.isArray(voulu) ? voulu : []).filter(x => ids.includes(x)); return dans.concat(ids.filter(x => !dans.includes(x))); };
+  function normMEP(v) {
+    v = v && typeof v === 'object' ? v : {};
+    const garde = (l, tous) => (Array.isArray(l) ? l : []).filter(x => tous.some(t => t[0] === x));
+    return { blocs: ordonner(v.blocs, BLOCS), masques: garde(v.masques, BLOCS), colonnes: ordonner(v.colonnes, COLS), colMasques: garde(v.colMasques, COLS), taille: v.taille === 'compact' ? 'compact' : 'normal' };
+  }
+  const mep = () => B.mep || (B.mep = normMEP(null));
   function htmlBulletin(D, el) {
+    const M = mep(), cols = M.colonnes.filter(c => !M.colMasques.includes(c));
+    const cellule = { elements: en => `<td class="bu-elem">${esc(en.elements || '')}</td>`, moyenne: (en, r) => `<td class="c">${r.moyenne != null ? O.pastille(Number(r.moyenne)) : '—'}</td>`,
+      classe: en => `<td class="c">${en.moyenne_classe != null ? fmt(en.moyenne_classe) : '—'}<div class="bu-prof">${en.min != null ? fmt(en.min) + ' – ' + fmt(en.max) : ''}</div></td>`, appreciation: (en, r) => `<td>${esc(r.appreciation || '')}</td>` };
+    const entete = { elements: ['Principaux éléments du programme travaillés', 'width:22%'], moyenne: ['Moyenne élève', 'width:8%'], classe: ['Classe (min – max)', 'width:10%'], appreciation: ['Acquisitions, progrès et difficultés éventuelles', ''] };
+    const pied = { elements: () => '<td></td>', moyenne: () => `<td class="c">${el.moyenne != null ? O.pastille(Number(el.moyenne)) : '—'}</td>`, classe: () => `<td class="c">${D.moyenne_classe != null ? fmt(D.moyenne_classe) : '—'}</td>`,
+      appreciation: () => `<td>${D.afficher_rang && el.rang ? `Rang : ${el.rang} / ${D.eleves.length}` : ''}</td>` };
     const lignes = D.enseignements.map(en => { const r = el.resultats[en.id] || {};
-      return `<tr><td><div class="bu-mat">${esc(en.matiere)}</div>${en.professeur ? `<div class="bu-prof">${esc(en.professeur)}</div>` : ''}${Number(en.coefficient) !== 1 ? `<div class="bu-prof">coef. ${fmt(en.coefficient)}</div>` : ''}</td>
-        <td class="bu-elem">${esc(en.elements || '')}</td>
-        <td class="c">${r.moyenne != null ? O.pastille(Number(r.moyenne)) : '—'}</td>
-        <td class="c">${en.moyenne_classe != null ? fmt(en.moyenne_classe) : '—'}<div class="bu-prof">${en.min != null ? fmt(en.min) + ' – ' + fmt(en.max) : ''}</div></td>
-        <td>${esc(r.appreciation || '')}</td></tr>`; }).join('');
+      return `<tr><td><div class="bu-mat">${esc(en.matiere)}</div>${en.professeur ? `<div class="bu-prof">${esc(en.professeur)}</div>` : ''}${Number(en.coefficient) !== 1 ? `<div class="bu-prof">coef. ${fmt(en.coefficient)}</div>` : ''}</td>${cols.map(c => cellule[c](en, r)).join('')}</tr>`; }).join('');
     const a = el.absences || {}, comp = (el.competences || []).filter(c => c.niveau);
-    return `<article class="bulletin">
-      <div class="bu-tete"><div><h2>${esc(D.etablissement.nom || 'Établissement')}</h2><div class="bu-prof">${esc(D.etablissement.adresse || '')}</div></div>
-        <div style="text-align:right"><strong>Bilan périodique · ${esc(D.periode.libelle)}</strong><div>Année ${esc(D.periode.annee || '')}</div><div class="bu-prof">du ${jourFr(D.periode.debut)} au ${jourFr(D.periode.fin)}</div></div></div>
-      <div class="barre" style="justify-content:space-between;margin:0 0 8px"><span><strong style="font-size:15px">${esc(el.nom.toUpperCase() + ' ' + el.prenom)}</strong>${el.date_naissance ? ` · né(e) le ${jourFr(el.date_naissance)}` : ''}</span>
-        <span>Classe : <strong>${esc(D.classe.nom)}</strong>${D.classe.prof_principal ? ` · Professeur principal : ${esc(D.classe.prof_principal)}` : ''}</span></div>
-      <div class="bu-defile"><table style="min-width:640px"><thead><tr><th style="width:17%">Enseignement</th><th style="width:22%">Principaux éléments du programme travaillés</th><th style="width:8%">Moyenne élève</th><th style="width:10%">Classe (min – max)</th><th>Acquisitions, progrès et difficultés éventuelles</th></tr></thead>
-        <tbody>${lignes}</tbody>
-        <tfoot><tr><td colspan="2"><strong>Moyenne générale</strong></td><td class="c">${el.moyenne != null ? O.pastille(Number(el.moyenne)) : '—'}</td><td class="c">${D.moyenne_classe != null ? fmt(D.moyenne_classe) : '—'}</td><td>${D.afficher_rang && el.rang ? `Rang : ${el.rang} / ${D.eleves.length}` : ''}</td></tr></tfoot></table></div>
-      ${comp.length ? `<div class="bu-bloc"><h3>Composantes du socle commun évaluées sur la période</h3><div class="petit">${comp.map(c => `<span style="margin-right:12px"><strong>${esc(c.code)}</strong> ${esc(N.niveaux[c.niveau - 1] || c.niveau)}</span>`).join('')}</div></div>` : ''}
-      <div class="bu-bloc"><h3>Vie scolaire</h3>Demi-journées d’absence : <strong>${a.demi_journees || 0}</strong> (dont ${a.non_justifiees || 0} non justifiée${a.non_justifiees > 1 ? 's' : ''}) · Retards : <strong>${a.retards || 0}</strong></div>
-      <div class="bu-bloc"><h3>Appréciation générale${el.mention ? ` · <span class="mention">${esc(el.mention)}</span>` : ''}</h3>${esc(el.generale || '')}</div>
-      <div class="bu-sign"><div>Le professeur principal</div><div>La direction</div><div>Signature des responsables légaux</div></div>
-      <div class="bu-pied"><span>Bilan établi d’après le contenu du bilan périodique du livret scolaire (arrêté du 31 décembre 2015).</span><span>Édité le ${new Date().toLocaleDateString('fr-FR')}${D.statut === 'ouvert' ? ' · PROVISOIRE' : ''}</span></div></article>`;
+    const BL = {
+      tete: () => `<div class="bu-tete"><div><h2>${esc(D.etablissement.nom || 'Établissement')}</h2><div class="bu-prof">${esc(D.etablissement.adresse || '')}</div></div>
+        <div style="text-align:right"><strong>Bilan périodique · ${esc(D.periode.libelle)}</strong><div>Année ${esc(D.periode.annee || '')}</div><div class="bu-prof">du ${jourFr(D.periode.debut)} au ${jourFr(D.periode.fin)}</div></div></div>`,
+      eleve: () => `<div class="barre" style="justify-content:space-between;margin:0 0 8px"><span><strong style="font-size:15px">${esc(el.nom.toUpperCase() + ' ' + el.prenom)}</strong>${el.date_naissance ? ` · né(e) le ${jourFr(el.date_naissance)}` : ''}</span>
+        <span>Classe : <strong>${esc(D.classe.nom)}</strong>${D.classe.prof_principal ? ` · Professeur principal : ${esc(D.classe.prof_principal)}` : ''}</span></div>`,
+      tableau: () => `<div class="bu-defile"><table style="min-width:${300 + 110 * cols.length}px"><thead><tr><th style="width:17%">Enseignement</th>${cols.map(c => `<th style="${entete[c][1]}">${entete[c][0]}</th>`).join('')}</tr></thead>
+        <tbody>${lignes}</tbody><tfoot><tr><td><strong>Moyenne générale</strong></td>${cols.map(c => pied[c]()).join('')}</tr></tfoot></table></div>`,
+      socle: () => comp.length ? `<div class="bu-bloc"><h3>Composantes du socle commun évaluées sur la période</h3><div class="petit">${comp.map(c => `<span style="margin-right:12px"><strong>${esc(c.code)}</strong> ${esc(N.niveaux[c.niveau - 1] || c.niveau)}</span>`).join('')}</div></div>` : '',
+      vie: () => `<div class="bu-bloc"><h3>Vie scolaire</h3>Demi-journées d’absence : <strong>${a.demi_journees || 0}</strong> (dont ${a.non_justifiees || 0} non justifiée${a.non_justifiees > 1 ? 's' : ''}) · Retards : <strong>${a.retards || 0}</strong></div>`,
+      generale: () => `<div class="bu-bloc"><h3>Appréciation générale${el.mention ? ` · <span class="mention">${esc(el.mention)}</span>` : ''}</h3>${esc(el.generale || '')}</div>`,
+      signatures: () => `<div class="bu-sign"><div>Le professeur principal</div><div>La direction</div><div>Signature des responsables légaux</div></div>`,
+      pied: () => `<div class="bu-pied"><span>Bilan établi d’après le contenu du bilan périodique du livret scolaire (arrêté du 31 décembre 2015).</span><span>Édité le ${new Date().toLocaleDateString('fr-FR')}${D.statut === 'ouvert' ? ' · PROVISOIRE' : ''}</span></div>` };
+    return `<article class="bulletin${M.taille === 'compact' ? ' bu-compact' : ''}">${M.blocs.filter(b => !M.masques.includes(b)).map(b => BL[b]()).join('')}</article>`;
+  }
+  const htmlEleve = (D, el) => B.retouches[el.id] || htmlBulletin(D, el);
+  function panneauMEP() {
+    const M = mep(), liste = (cle, tous, ordre, masq, att) => ordre.map((id, i) => `<div class="barre" style="gap:6px"><label style="flex:1"><input type="checkbox" data-mep-vis="${att}:${id}" ${masq.includes(id) ? '' : 'checked'}> ${esc(tous.find(t => t[0] === id)[1])}</label>
+      <button class="b sec" data-mep-haut="${att}:${id}" ${i === 0 ? 'disabled' : ''} title="Monter">↑</button><button class="b sec" data-mep-bas="${att}:${id}" ${i === ordre.length - 1 ? 'disabled' : ''} title="Descendre">↓</button></div>`).join('');
+    const defaut = JSON.stringify(normMEP(valParam('bulletin_mise_en_page', null))) === JSON.stringify(M);
+    return `<div class="carte" id="b-mep" style="background:#faf7ef"><h3>Mise en page du bulletin</h3>
+      <p class="petit">Décoche pour masquer, monte ou descends pour changer la place. L’aperçu et l’impression suivent tout de suite. « Enregistrer » fixe cette mise en page pour tous les bulletins.</p>
+      <div class="grille2"><div><strong>Blocs de la page</strong>${liste('blocs', BLOCS, M.blocs, M.masques, 'b')}</div>
+        <div><strong>Colonnes du tableau des matières</strong>${liste('colonnes', COLS, M.colonnes, M.colMasques, 'c')}
+          <div class="barre" style="margin-top:8px"><label class="petit">Taille du texte <select id="mep-taille"><option value="normal" ${M.taille === 'normal' ? 'selected' : ''}>Normale</option><option value="compact" ${M.taille === 'compact' ? 'selected' : ''}>Compacte (pour tenir sur une page)</option></select></label></div></div></div>
+      <div class="barre"><label class="petit"><input type="checkbox" id="mep-retouche" ${B.retouche ? 'checked' : ''}> Retoucher le texte directement sur l’aperçu (valable pour l’impression, par élève)</label>
+        <button class="b sec" id="mep-annuler-retouches" ${Object.keys(B.retouches).length ? '' : 'hidden'}>Annuler les retouches (${Object.keys(B.retouches).length})</button></div>
+      <div class="barre"><button class="b" id="mep-enreg" ${defaut ? 'disabled' : ''}>Enregistrer comme mise en page par défaut</button><button class="b sec" id="mep-reset">Rétablir la mise en page standard</button></div></div>`;
   }
   function imprimer(html) {
     let z = document.getElementById('lc-impression'); if (!z) { z = document.createElement('div'); z.id = 'lc-impression'; document.body.appendChild(z); }
@@ -406,10 +450,11 @@
   // ---------- Onglet Bulletins ----------
   function vueBulletins() {
     if (!S.classes.length) return `<div class="carte"><h2>Bulletins</h2><p class="doux">Crée d’abord des classes et des élèves.</p></div>`;
-    const onglets = [['suivi', 'Suivi du remplissage'], ['apercu', 'Aperçu et impression']].concat(estAdm() ? [['reglages', 'Réglages']] : []);
+    const onglets = [['suivi', 'Suivi du remplissage']].concat(estAdm() ? [['toutes', 'Toutes les classes']] : [], [['apercu', 'Aperçu et impression']], estAdm() ? [['reglages', 'Réglages']] : []);
     const nav = `<div class="sousnav">${onglets.map(([k, l]) => `<button data-bsub="${k}" class="${B.bsub === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
     let corps;
     if (B.bsub === 'reglages' && estAdm()) corps = vueReglagesB();
+    else if (B.bsub === 'toutes' && estAdm()) corps = selecteurs(false) + vueToutes();
     else if (B.bsub === 'apercu') corps = selecteurs(false) + vueApercu();
     else corps = selecteurs(false) + vueSuivi();
     return `${msg()}<div class="carte"><h2>Bulletins</h2>${nav}${corps}</div>`;
@@ -425,16 +470,36 @@
     return `<div class="stat"><span>Appréciations des matières : <strong>${total}/${attendu}</strong></span><span>Appréciations générales : <strong>${s.generales}/${s.eleves}</strong></span></div>${actions}
       <div class="tablewrap"><table class="bu-suivi"><tr><th>Matière</th><th>Appréciations</th><th></th><th>Éléments du programme</th></tr>${lignes}</table></div>`;
   }
+  function vueToutes() {
+    const T = B.toutes; if (!T) return '<p class="doux">Chargement…</p>';
+    const pc = (n, t) => t ? Math.round(100 * n / t) : 0;
+    const bilan = c => { const attendu = c.matieres.length * c.eleves, fait = c.matieres.reduce((a, m) => a + m.appreciations, 0);
+      const manque = c.matieres.filter(m => m.appreciations < c.eleves || !m.elements);
+      return { attendu, fait, manque, total: pc(fait + Math.min(c.generales, c.eleves), attendu + c.eleves), complet: !manque.length && c.generales >= c.eleves }; };
+    const lignes = T.map(c => ({ c, b: bilan(c) })).filter(x => !B.seulIncompletes || !x.b.complet);
+    const tot = T.map(bilan), tFait = tot.reduce((a, b) => a + b.fait, 0), tAtt = tot.reduce((a, b) => a + b.attendu, 0), nCompl = tot.filter(b => b.complet).length;
+    const tag = st => ({ ouvert: '<span class="tag">Ouvert</span>', valide: '<span class="tag ok">Validé</span>', publie: '<span class="tag ok">Publié</span>' }[st] || '');
+    const cartes = lignes.map(({ c, b }) => `<div class="carte" style="background:#faf7ef">
+      <div class="barre" style="justify-content:space-between"><strong>${esc(c.classe)}</strong><span>${tag(c.statut)} <button class="lien" data-ouvrir-classe="${c.classe_id}">Ouvrir le suivi ›</button></span></div>
+      <div class="petit">${c.prof_principal ? 'Professeur principal : ' + esc(c.prof_principal) + ' · ' : ''}${c.eleves} élèves</div>
+      <div class="barre"><div class="barre-prog" style="flex:1"><i style="width:${b.total}%"></i></div><strong>${b.total} %</strong></div>
+      <div class="petit">Appréciations des matières : <strong>${b.fait}/${b.attendu}</strong> · Appréciations générales : <strong>${c.generales}/${c.eleves}</strong></div>
+      ${b.complet ? '<div class="petit" style="color:var(--ok,#2f9e5b)">✓ Complet</div>' : `<div class="petit">Reste à faire : ${b.manque.map(m => `${esc(m.matiere)}${m.professeur ? ' (' + esc(m.professeur) + ')' : ''}${m.appreciations < c.eleves ? ' ' + (c.eleves - m.appreciations) + ' manquante' + (c.eleves - m.appreciations > 1 ? 's' : '') : ''}${m.elements ? '' : ' · éléments du programme'}`).join(' ; ')}</div>`}</div>`).join('');
+    return `<div class="stat"><span>Classes complètes : <strong>${nCompl}/${T.length}</strong></span><span>Appréciations des matières : <strong>${tFait}/${tAtt}</strong></span></div>
+      <div class="barre"><label class="petit"><input type="checkbox" id="t-incompletes" ${B.seulIncompletes ? 'checked' : ''}> Seulement les classes incomplètes</label></div>
+      ${cartes || '<p class="doux">Toutes les classes sont complètes. 🎉</p>'}`;
+  }
   function vueApercu() {
     if (!estPP()) return '<p class="doux">Les bulletins sont consultables par le professeur principal de la classe et la direction.</p>';
     const D = B.data; if (!D) return '<p class="doux">Chargement…</p>';
     if (!D.eleves.length) return '<p class="doux">Aucun élève dans cette classe.</p>';
     const el = D.eleves.find(e => e.id === B.apercu) || D.eleves[0];
     return `<div class="barre"><select id="b-eleve">${D.eleves.map(e => opt(e.id, e.nom + ' ' + e.prenom, e.id === el.id)).join('')}</select>
-        <button class="b" id="b-imp1">🖨 Imprimer ce bulletin</button><button class="b sec" id="b-impc">🖨 Imprimer toute la classe (${D.eleves.length})</button>
+        <button class="b" id="b-imp1">🖨 Imprimer ce bulletin</button><button class="b sec" id="b-impc">🖨 Imprimer toute la classe (${D.eleves.length})</button>${estAdm() ? `<button class="b sec" id="b-mep-ouvrir">🎛 Mettre en page${B.mepOuvert ? ' ▲' : ' ▼'}</button>` : ''}
         <span class="petit">Pour un PDF : choisis « Enregistrer au format PDF » dans la fenêtre d’impression.</span></div>
       ${D.statut === 'ouvert' ? '<div class="msg info">Bulletins encore ouverts à la saisie : l’impression porte la mention « PROVISOIRE ».</div>' : ''}
-      <div id="b-rendu">${htmlBulletin(D, el)}</div>`;
+      ${estAdm() && B.mepOuvert ? panneauMEP() : ''}${B.retouches[el.id] ? '<div class="msg info">Ce bulletin a été retouché à la main (non enregistré, valable pour l’impression). <button class="lien" id="b-annuler-retouche">Annuler la retouche</button></div>' : ''}
+      <div id="b-rendu">${htmlEleve(D, el)}</div>`;
   }
   function vueReglagesB() {
     const v = (k, d) => esc(valParam(k, d));
@@ -460,9 +525,30 @@
       if (r.error) dire('err', r.error.message); else dire('ok', { valide: 'Bulletins validés : les saisies des professeurs sont figées.', ouvert: 'Saisie rouverte.', publie: 'Bulletins publiés.' }[b.dataset.statut]);
       recharger(chargerBulletins);
     });
+
+    const inc = $('#t-incompletes'); if (inc) inc.onchange = () => { B.seulIncompletes = inc.checked; refaire(); };
+    document.querySelectorAll('[data-ouvrir-classe]').forEach(b => b.onclick = () => { B.classeId = b.dataset.ouvrirClasse; B.bsub = 'suivi'; recharger(chargerBulletins); });
+    const ouvM = $('#b-mep-ouvrir'); if (ouvM) ouvM.onclick = () => { B.mepOuvert = !B.mepOuvert; refaire(); };
+    const toucher = () => { B.mepSale = true; B.retouches = {}; refaire(); };
+    document.querySelectorAll('[data-mep-vis]').forEach(c => c.onchange = () => { const [t, id] = c.dataset.mepVis.split(':'), M = mep(), k = t === 'b' ? 'masques' : 'colMasques';
+      M[k] = c.checked ? M[k].filter(x => x !== id) : M[k].concat(id); toucher(); });
+    const deplacer = (att, dir) => { const [t, id] = att.split(':'), M = mep(), k = t === 'b' ? 'blocs' : 'colonnes', i = M[k].indexOf(id), j = i + dir;
+      if (j < 0 || j >= M[k].length) return; [M[k][i], M[k][j]] = [M[k][j], M[k][i]]; toucher(); };
+    document.querySelectorAll('[data-mep-haut]').forEach(b => b.onclick = () => deplacer(b.dataset.mepHaut, -1));
+    document.querySelectorAll('[data-mep-bas]').forEach(b => b.onclick = () => deplacer(b.dataset.mepBas, 1));
+    const tail = $('#mep-taille'); if (tail) tail.onchange = () => { mep().taille = tail.value; toucher(); };
+    const ret = $('#mep-retouche'); if (ret) ret.onchange = () => { B.retouche = ret.checked; refaire(); };
+    const annR = $('#mep-annuler-retouches'); if (annR) annR.onclick = () => { B.retouches = {}; refaire(); };
+    const annU = $('#b-annuler-retouche'); if (annU) annU.onclick = () => { delete B.retouches[B.apercu]; refaire(); };
+    const rst = $('#mep-reset'); if (rst) rst.onclick = () => { B.mep = normMEP(null); B.mepSale = true; B.retouches = {}; refaire(); };
+    const enr = $('#mep-enreg'); if (enr) enr.onclick = async () => {
+      const r = await sb.from('parametres').update({ valeur: mep() }).eq('cle', 'bulletin_mise_en_page').select('cle');
+      if (r.error) dire('err', r.error.message); else if (!(r.data || []).length) dire('err', 'Réglage introuvable : la migration 0012 est-elle installée ?'); else { dire('ok', 'Mise en page enregistrée pour tous les bulletins.'); B.mepSale = false; }
+      recharger(chargerBulletins); };
+    const rendu = $('#b-rendu'); if (rendu && estAdm() && B.retouche) { const art = rendu.firstElementChild; if (art) { art.contentEditable = 'true'; art.oninput = () => { const c = art.cloneNode(true); c.removeAttribute('contenteditable'); B.retouches[B.apercu] = c.outerHTML; const bt = $('#mep-annuler-retouches'); if (bt) { bt.hidden = false; bt.textContent = `Annuler les retouches (${Object.keys(B.retouches).length})`; } }; } }
     const se = $('#b-eleve'); if (se) se.onchange = () => { B.apercu = se.value; refaire(); };
-    const i1 = $('#b-imp1'); if (i1) i1.onclick = () => imprimer(htmlBulletin(B.data, B.data.eleves.find(e => e.id === B.apercu) || B.data.eleves[0]));
-    const ic = $('#b-impc'); if (ic) ic.onclick = () => imprimer(B.data.eleves.map(e => htmlBulletin(B.data, e)).join(''));
+    const i1 = $('#b-imp1'); if (i1) i1.onclick = () => imprimer(htmlEleve(B.data, B.data.eleves.find(e => e.id === B.apercu) || B.data.eleves[0]));
+    const ic = $('#b-impc'); if (ic) ic.onclick = () => imprimer(B.data.eleves.map(e => htmlEleve(B.data, e)).join(''));
     const g = $('#g-enreg'); if (g) g.onclick = async () => {
       const n = id => Number(String($(id).value).replace(',', '.'));
       const max = n('#g-max'), maxe = n('#g-maxe'), mentions = $('#g-mentions').value.split('\n').map(x => x.trim()).filter(Boolean);
