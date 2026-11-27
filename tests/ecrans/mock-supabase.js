@@ -5,7 +5,7 @@
   const auj = new Date(); const j = auj.toISOString().slice(0, 10);
   const at = (h, m) => { const d = new Date(); d.setHours(h, m, 0, 0); return d.toISOString(); };
   const DB = { classes: [], eleves: [], matieres: [], enseignements: [], annees_scolaires: [], periodes: [], cours: [], appels: [], presences: [], observations: [], punitions: [],
-    coffre_telephone: [], corrections_presence: [], absences_prevues: [], seances_retenue: [], incidents: [], incident_eleves: [], passages_infirmerie: [], fermetures: [], groupes: [], groupe_eleves: [] };
+    coffre_telephone: [], corrections_presence: [], absences_prevues: [], seances_retenue: [], incidents: [], incident_eleves: [], passages_infirmerie: [], fermetures: [], groupes: [], groupe_eleves: [], modeles_evaluation: [] };
   const an = { id: uid(), libelle: '2026-2027', active: true }; DB.annees_scolaires.push(an);
   DB.periodes.push({ id: uid(), annee_id: an.id, numero: 1, libelle: 'Trimestre 1', debut: '2026-09-01', fin: '2026-11-30' }, { id: uid(), annee_id: an.id, numero: 2, libelle: 'Trimestre 2', debut: '2026-12-01', fin: '2027-03-15' });
   ['5e A', '6e A'].forEach(n => DB.classes.push({ id: uid(), annee_id: an.id, niveau: n.slice(0, 2), nom: n }));
@@ -118,6 +118,19 @@
   };
   const r2 = x => Math.round(x * 100) / 100;
   Object.assign(RPC, {
+    historique_notes({ p_eval }) { return DB.notes.filter(n => n.evaluation_id === p_eval).map(n => ({ horodatage: now(), auteur: 'Test Professeur', operation: 'INSERT', eleve_id: n.eleve_id, avant_valeur: null, avant_statut: null, apres_valeur: n.valeur, apres_statut: n.statut, commentaire: n.commentaire })); },
+    copier_evaluation({ p_eval, p_enseignement, p_date }) {
+      const src = DB.evaluations.find(e => e.id === p_eval); const id = crypto.randomUUID();
+      DB.evaluations.push(HOOK_('evaluations', { id, enseignement_id: p_enseignement, titre: src.titre, date_eval: p_date, type: src.type, bareme: src.bareme, coefficient: src.coefficient, visible_familles: false }));
+      return id; },
+    publier_modele({ p_eval, p_description, p_partage }) {
+      const src = DB.evaluations.find(e => e.id === p_eval); const en = DB.enseignements.find(x => x.id === src.enseignement_id); const cl = DB.classes.find(c => c.id === en.classe_id);
+      DB.modeles_evaluation.push({ id: crypto.randomUUID(), titre: src.titre, description: p_description || null, type: src.type, bareme: src.bareme, coefficient: src.coefficient, matiere_id: en.matiere_id, niveau: cl.niveau, competences_codes: [], partage: p_partage, created_at: now() });
+      return null; },
+    utiliser_modele({ p_modele, p_enseignement, p_date }) {
+      const m = DB.modeles_evaluation.find(x => x.id === p_modele); const id = crypto.randomUUID();
+      DB.evaluations.push(HOOK_('evaluations', { id, enseignement_id: p_enseignement, titre: m.titre, date_eval: p_date, type: m.type, bareme: m.bareme, coefficient: m.coefficient, visible_familles: false }));
+      return id; },
     mes_droits_notes() { return DB.__droits || { admin: true, classes_pp: [], enseignements: [] }; },
     saisir_notes({ p_eval, p_lignes }) {
       const ev = DB.evaluations.find(e => e.id === p_eval); const per = DB.periodes.find(p => p.id === ev.periode_id);

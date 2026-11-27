@@ -75,3 +75,6 @@ grant execute on function
   public.saisir_notes(uuid, jsonb), public.saisir_acquisitions(uuid, jsonb),
   public.moyennes_matieres(uuid, uuid), public.moyennes_generales(uuid, uuid), public.bilan_competences(uuid, uuid) to anon;
 grant execute on function public.mes_droits_notes() to anon;
+
+grant select, insert, update, delete on public.modeles_evaluation to anon;
+grant execute on function public.historique_notes(uuid), public.copier_evaluation(uuid, uuid, date), public.publier_modele(uuid, text, boolean), public.utiliser_modele(uuid, uuid, date) to anon;

@@ -69,3 +69,6 @@ revoke execute on function
 revoke all on public.competences, public.evaluations, public.evaluation_competences,
   public.notes, public.acquisitions, public.bilans_competences from anon;
 revoke execute on function public.mes_droits_notes() from anon;
+
+revoke execute on function public.historique_notes(uuid), public.copier_evaluation(uuid, uuid, date), public.publier_modele(uuid, text, boolean), public.utiliser_modele(uuid, uuid, date) from anon;
+revoke all on public.modeles_evaluation from anon;

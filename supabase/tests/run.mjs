@@ -19,6 +19,7 @@ await db.exec(readFileSync(new URL('../migrations/0004_vie_scolaire_complements.
 await db.exec(readFileSync(new URL('../migrations/0005_notes_competences.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0006_socle_officiel.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0007_droits_notes.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../migrations/0008_notes_ameliorations.sql', import.meta.url), 'utf8'));
 
 const U = { gest:'00000000-0000-0000-0000-000000000001', dir:'00000000-0000-0000-0000-000000000002',
   prof:'00000000-0000-0000-0000-000000000003', eleve:'00000000-0000-0000-0000-000000000004',
@@ -520,6 +521,33 @@ await test('droits d’affichage : la direction est admin ; le prof connaît sa 
   return d.res.rows[0].r.admin === true && p.res.rows[0].r.admin === false && p.res.rows[0].r.enseignements.includes(ensEps)
       && p2.res.rows[0].r.classes_pp.includes(cl5) && p2.res.rows[0].r.enseignements.includes(ensMath); });
 await test('droits d’affichage : fermés aux visiteurs sans connexion', async () => { const r = await as('anon', 'select mes_droits_notes()'); return !r.ok; });
+
+// ---------- Historique, copie d'évaluation, bibliothèque entre professeurs ----------
+const evCL = (await un(`select id from evaluations where titre='Course longue'`)).id;
+await test('historique : les saisies sont tracées, visibles du professeur, du prof principal et de la direction, pas des élèves', async () => {
+  const h = await as('prof', `select * from historique_notes('${evCL}')`); const d = await as('dir', `select * from historique_notes('${evCL}')`);
+  const p2 = await as('prof2', `select * from historique_notes('${evCL}')`); const e = await as('eleve', `select * from historique_notes('${evCL}')`);
+  return h.ok && h.res.rows.length > 0 && h.res.rows.some(r => r.operation === 'INSERT') && d.res.rows.length === h.res.rows.length && p2.res.rows.length > 0 && (!e.ok || e.res.rows.length === 0); });
+await test('historique : fermé à la vie scolaire et aux visiteurs (tant que le réglage « tout le personnel » est coupé)', async () => {
+  const v = await as('vs2', `select * from historique_notes('${evCL}')`); const a = await as('anon', `select * from historique_notes('${evCL}')`); return v.ok && v.res.rows.length === 0 && !a.ok; });
+await test('copie : le professeur copie son évaluation (sans les notes) ; pas sur la matière d’un collègue', async () => {
+  const ok = await as('prof', `select copier_evaluation('${evCL}', '${ensEps}', '2026-12-05') id`); const nouv = ok.res?.rows?.[0]?.id;
+  const n = nouv && await as('prof', `select e.titre, e.bareme, (select count(*)::int from notes where evaluation_id = e.id) nb, e.periode_id from evaluations e where e.id = '${nouv}'`);
+  const non = await as('prof', `select copier_evaluation('${evCL}', '${ensMath}', '2026-12-05')`);
+  return ok.ok && n.res.rows[0].titre === 'Course longue' && n.res.rows[0].nb === 0 && !!n.res.rows[0].periode_id && !non.ok; });
+await test('bibliothèque : un modèle partagé est lu par les collègues et réutilisable ; un modèle privé reste privé', async () => {
+  const pub = await as('prof', `select publier_modele('${evCL}', 'Course de durée, 3 niveaux', true) id`); const mid = pub.res?.rows?.[0]?.id;
+  const priv = await as('prof', `select publier_modele('${evCL}', 'Brouillon', false) id`); const pid = priv.res?.rows?.[0]?.id;
+  const vu = await as('prof2', `select id from modeles_evaluation`); const ids = (vu.res?.rows || []).map(r => r.id);
+  const use = await as('prof2', `select utiliser_modele('${mid}', '${ensMath}', '2026-12-07') id`);
+  const ev = use.ok && await as('prof2', `select titre, enseignement_id from evaluations where id = '${use.res.rows[0].id}'`);
+  const eleve = await as('eleve', `select id from modeles_evaluation`);
+  return pub.ok && priv.ok && ids.includes(mid) && !ids.includes(pid) && use.ok && ev.res.rows[0].titre === 'Course longue' && ev.res.rows[0].enseignement_id === ensMath && (!eleve.ok || eleve.res.rows.length === 0); });
+await test('bibliothèque : on ne publie que ses propres évaluations ; on n’efface que ses propres modèles', async () => {
+  const evMath = (await un(`select id from evaluations where enseignement_id='${ensMath}' limit 1`));
+  const a = evMath && await as('prof', `select publier_modele('${evMath.id}', 'Volé', true)`);
+  const b = await as('prof2', `delete from modeles_evaluation where created_by <> '${U.prof2}' returning id`);
+  return (!evMath || !a.ok) && (!b.ok || b.res.rows.length === 0); });
 
 // ---------- Visibilité des notes (réglage notes_visibles_tout_personnel) ----------
 await test('visibilité : un professeur ne lit que les notes de sa matière (EPS), pas celles de la matière d’un collègue', async () => {
