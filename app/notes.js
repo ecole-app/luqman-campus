@@ -55,6 +55,7 @@
   const estAdm = () => !!N.droits.admin;
   const monEns = () => estAdm() || N.droits.ens.includes(N.ensId);
   const estPP = () => estAdm() || N.droits.pp.includes(N.classeId);
+  const nomClasse = id => (S.classes.find(c => c.id === id) || {}).nom || '';
   const classe = () => S.classes.find(c => c.id === N.classeId);
   const ensDeClasse = () => S.ens.filter(x => x.classe_id === N.classeId).sort((a, b) => nomMatiere(a.matiere_id).localeCompare(nomMatiere(b.matiere_id), 'fr'));
   const elevesClasse = () => S.eleves.filter(e => e.classe_id === N.classeId);
@@ -67,6 +68,12 @@
     const r = await sb.rpc(nom, args);
     return r.error ? { error: estReseau(r.error) ? 'Pas de connexion : rien n’a été enregistré.' : r.error.message } : r;
   };
+
+  // ---------- Copie locale pour ouvrir l'onglet sans réseau ----------
+  const lireCache = k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
+  const ecrireCache = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* stockage indisponible */ } };
+  const CLE_BASE = 'lc_nb_base';
+  const cleEvals = () => `lc_nb_ev_${N.ensId}_${N.periodeId || 'annee'}`;
 
   // ---------- Notes hors ligne : file d'attente gardée sur l'appareil ----------
   const FILE_N = 'lc_file_notes';
@@ -120,12 +127,24 @@
       sb.rpc('mes_droits_notes')]);
     if (!dr.error && dr.data) N.droits = { admin: !!dr.data.admin, pp: dr.data.classes_pp || [], ens: dr.data.enseignements || [] };
     if (!en.error && en.data && en.data.length) S.ens = en.data;
-    if (p.error) throw new Error(estReseau(p.error) ? 'Pas de connexion : les notes ont besoin du réseau.' : p.error.message);
+    if (p.error) {
+      const c = lireCache(CLE_BASE);
+      if (estReseau(p.error) && c) {
+        N.periodes = c.periodes || []; N.competences = c.competences || []; N.droits = c.droits || N.droits; N.niveaux = c.niveaux || N.niveaux; Object.assign(N.params, c.params || {});
+        if (!N.classeId) N.classeId = (S.classes[0] || {}).id || '';
+        if (!N.ensId || !ensDeClasse().some(x => x.id === N.ensId)) N.ensId = (ensDeClasse()[0] || {}).id || '';
+        if (N.periodeId === undefined) { const j = aujourdhui(); N.periodeId = (N.periodes.find(x => j >= x.debut && j <= x.fin) || N.periodes[0] || {}).id || ''; }
+        N.horsLigne = c.ts || true; return;
+      }
+      throw new Error(estReseau(p.error) ? 'Pas de connexion : ouvre une première fois l’onglet Notes avec du réseau, il sera ensuite disponible hors ligne.' : p.error.message);
+    }
+    N.horsLigne = false;
     N.periodes = p.data || []; N.competences = c.data || [];
     (pr.data || []).forEach(x => { if (x.cle === 'note_seuil_haut') N.params.haut = Number(x.valeur); if (x.cle === 'note_seuil_bas') N.params.bas = Number(x.valeur); if (x.cle === 'niveaux_competences' && Array.isArray(x.valeur)) N.niveaux = x.valeur; if (x.cle === 'notes_visibles_tout_personnel') N.params.visTout = x.valeur === true || x.valeur === 'true'; if (x.cle === 'note_non_rendu_compte_zero') N.params.nonRendu = !(x.valeur === false || x.valeur === 'false'); });
     if (!N.classeId) N.classeId = (S.classes[0] || {}).id || '';
     if (!N.ensId || !ensDeClasse().some(x => x.id === N.ensId)) N.ensId = (ensDeClasse()[0] || {}).id || '';
     if (N.periodeId === undefined) { const j = aujourdhui(); N.periodeId = (N.periodes.find(x => j >= x.debut && j <= x.fin) || N.periodes.filter(x => x.debut <= j).pop() || N.periodes[0] || {}).id || ''; }
+    ecrireCache(CLE_BASE, { periodes: N.periodes, competences: N.competences, droits: N.droits, niveaux: N.niveaux, params: N.params, ts: new Date().toISOString() });
     N.pret = true;
   }
   async function chargerEvals() {
@@ -133,11 +152,24 @@
     if (!N.ensId) return;
     let q = sb.from('evaluations').select('*').eq('enseignement_id', N.ensId).order('date_eval', { ascending: false });
     if (N.periodeId) q = q.eq('periode_id', N.periodeId);
-    const e = await q; if (e.error) throw new Error(e.error.message);
+    const e = await q;
+    if (e.error) {
+      const c = lireCache(cleEvals());
+      if (estReseau(e.error) && c) {
+        N.evals = c.evals || []; N.notes = c.notes || []; N.evalComps = c.evalComps || []; N.acqs = c.acqs || []; N.horsLigne = c.ts || true;
+        lireFile().forEach(x => { if (!N.evals.some(v => v.id === x.ev)) return; N.notes = N.notes.filter(y => !(y.evaluation_id === x.ev && y.eleve_id === x.eleve));
+          const st = x.ligne.statut || (String(x.ligne.valeur ?? '').trim() ? 'note' : null); if (st) N.notes.push({ evaluation_id: x.ev, eleve_id: x.eleve, statut: st, valeur: st === 'note' ? num(x.ligne.valeur) : null, commentaire: x.ligne.commentaire || null }); });
+        return;
+      }
+      throw new Error(e.error.message);
+    }
     N.evals = e.data || [];
-    const ids = N.evals.map(x => x.id); if (!ids.length) return;
-    const [n, ec, a] = await Promise.all([sb.from('notes').select('*').in('evaluation_id', ids), sb.from('evaluation_competences').select('*').in('evaluation_id', ids), sb.from('acquisitions').select('*').in('evaluation_id', ids)]);
-    N.notes = n.data || []; N.evalComps = ec.data || []; N.acqs = a.data || [];
+    const ids = N.evals.map(x => x.id);
+    if (ids.length) {
+      const [n, ec, a] = await Promise.all([sb.from('notes').select('*').in('evaluation_id', ids), sb.from('evaluation_competences').select('*').in('evaluation_id', ids), sb.from('acquisitions').select('*').in('evaluation_id', ids)]);
+      N.notes = n.data || []; N.evalComps = ec.data || []; N.acqs = a.data || [];
+    }
+    ecrireCache(cleEvals(), { evals: N.evals, notes: N.notes, evalComps: N.evalComps, acqs: N.acqs, ts: new Date().toISOString() });
   }
   async function chargerReleve() {
     const per = N.periodeId || null;
@@ -150,7 +182,7 @@
     if (r.error) throw new Error(r.error.message);
     N.bilan = r.data || [];
   }
-  async function chargerNotes() { await envoyerFile(); await chargerBase(); if (N.vue === 'reglages') return; if (N.vue === 'releve') await chargerReleve(); else await chargerEvals(); }
+  async function chargerNotes() { await envoyerFile(); await chargerBase(); if (N.vue === 'reglages') return; if (N.vue === 'biblio') return chargerBiblio(); if (N.vue === 'releve') await chargerReleve(); else await chargerEvals(); }
   async function chargerCompetences() {
     await chargerBase();
     if (N.sub === 'saisie') await chargerEvals(); else if (N.sub === 'bilan') await chargerBilan(); else { const c = await sb.from('competences').select('*').order('cycle').order('ordre'); N.competences = c.data || []; }
@@ -186,7 +218,8 @@
   }
   function vueNotes() {
     if (!S.classes.length) return `<div class="carte"><h2>Notes</h2><p class="doux">Crée d’abord des classes et des élèves.</p></div>`;
-    const nav = `<div class="sousnav"><button data-vue="evals" class="${N.vue !== 'releve' ? 'on' : ''}">Évaluations</button><button data-vue="releve" class="${N.vue === 'releve' ? 'on' : ''}">Relevé de classe</button>${estAdm() ? `<button data-vue="reglages" class="${N.vue === 'reglages' ? 'on' : ''}">Réglages</button>` : ''}</div>`;
+    const nav = `<div class="sousnav"><button data-vue="evals" class="${N.vue !== 'releve' ? 'on' : ''}">Évaluations</button><button data-vue="releve" class="${N.vue === 'releve' ? 'on' : ''}">Relevé de classe</button><button data-vue="biblio" class="${N.vue === 'biblio' ? 'on' : ''}">Bibliothèque</button>${estAdm() ? `<button data-vue="reglages" class="${N.vue === 'reglages' ? 'on' : ''}">Réglages</button>` : ''}</div>${N.horsLigne ? `<div class="msg info">Hors ligne : données de la dernière ouverture avec réseau. Les notes saisies partiront au retour du réseau.</div>` : ''}`;
+    if (N.vue === 'biblio') return `${msgNotes()}<div class="carte"><h2>Notes</h2>${nav}${vueBiblio()}</div>`;
     if (N.vue === 'reglages' && estAdm()) return `${msgNotes()}<div class="carte"><h2>Notes</h2>${nav}${vueReglages()}</div>`;
     if (N.vue === 'releve') return `${msgNotes()}<div class="carte"><h2>Notes</h2>${nav}${selecteurs(false)}${vueReleve()}</div>`;
     const ev = N.evalId && evalCourante();
@@ -262,6 +295,7 @@
     return `<div class="barre"><button class="b sec" id="s-retour">← Évaluations</button><strong>${esc(ev.titre)}</strong><span class="petit">${jourFr(ev.date_eval + 'T12:00:00')} · sur ${fmt(ev.bareme)} · coef. ${fmt(ev.coefficient)} · ${esc(per ? per.libelle : '')}${per && per.verrouillee ? ' 🔒 verrouillée' : ''}</span></div>
       ${per && per.verrouillee ? '<div class="msg info">Période verrouillée : seule la direction peut encore modifier les notes.</div>' : (!monEns() ? '<div class="msg info">Lecture seule : cette matière n’est pas la vôtre.</div>' : '')}
       <div id="n-file"></div>
+      ${outilsSaisie(ev)}
       <div id="n-barre">${barreStats(ev)}</div>
       <p class="petit">Tape la note (14,5). Entrée = élève suivant. <strong>Abs</strong> absent · <strong>Disp</strong> dispensé · <strong>NR</strong> non rendu (compte 0). Vide = effacer. Enregistrement automatique.</p>
       <div id="n-lignes">${lignes}</div>
@@ -317,8 +351,9 @@
   function liensNotes() {
     document.querySelectorAll('[data-vue]').forEach(b => b.onclick = () => { N.vue = b.dataset.vue; N.evalId = null; recharger(chargerNotes); });
     if (N.vue === 'reglages') return liensReglages();
+    if (N.vue === 'biblio') return liensBiblio();
     if (N.vue === 'releve') return liensReleve();
-    majFile();
+    majFile(); liensOutils();
     liensSelecteurs(chargerNotes, true); lienFiche();
     const nouvelle = $('#e-nouvelle'); if (nouvelle) nouvelle.onclick = () => { N.creation = true; refaire(); };
     const annuler = $('#e-annuler'); if (annuler) annuler.onclick = () => { N.creation = false; refaire(); };
@@ -480,6 +515,142 @@
     };
   }
 
+
+
+  // ---------- Outils d'une évaluation : historique, copie, bibliothèque, import CSV, familles ----------
+  const quand = x => new Date(x).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', dateStyle: 'short', timeStyle: 'short' });
+  const txtNote = (st, v) => st == null ? '—' : st === 'note' ? fmt(v) : (statutTxt[st] || st);
+  function outilsSaisie(ev) {
+    const mien = monEns();
+    return `<div class="barre" id="n-outils"><button class="b sec" id="o-histo">🕘 Historique</button>
+      ${mien ? `<button class="b sec" id="o-csv">⬆ Importer un CSV</button><button class="b sec" id="o-copie">⧉ Copier vers une autre classe</button><button class="b sec" id="o-pub">📚 Publier dans la bibliothèque</button>
+      <label class="petit"><input type="checkbox" id="o-fam" ${ev.visible_familles ? 'checked' : ''}> Publiée aux familles <span title="L’espace élèves et parents arrive en phase 2 : ce réglage est préparé.">(à venir)</span></label>` : ''}</div><div id="n-panneau"></div>`;
+  }
+  const panneau = h => { const el = $('#n-panneau'); if (el) el.innerHTML = h; return el; };
+  const norm = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  function analyserCsv(texte, ev) {
+    const lignes = texte.split(/\r?\n/).map(l => l.trim()).filter(Boolean); if (!lignes.length) return { ok: [], bad: [] };
+    const sep = lignes.some(l => l.includes(';')) ? ';' : lignes.some(l => l.includes('\t')) ? '\t' : ',';
+    const cle = new Map(); elevesClasse().forEach(e => [norm(e.nom + ' ' + e.prenom), norm(e.prenom + ' ' + e.nom)].forEach(k => cle.set(k, cle.has(k) ? 'dup' : e)));
+    const jeton = t => { const x = t.trim(); if (/^(abs|absent)$/i.test(x)) return { statut: 'absent' }; if (/^(disp|dispense|dispensé|dispensée)$/i.test(x)) return { statut: 'dispense' };
+      if (/^(nr|non rendu)$/i.test(x)) return { statut: 'non_rendu' }; if (/^\d+([.,]\d+)?$/.test(x)) { const v = num(x); return v >= 0 && v <= ev.bareme ? { valeur: x } : { err: `note ${x} au-dessus du barème (${fmt(ev.bareme)})` }; } return null; };
+    const ok = [], bad = []; let debut = 0;
+    const premiere = lignes[0].split(sep); if (premiere.length > 1 && !jeton(premiere[premiere.length - 1]) && !/^\s*$/.test(premiere[premiere.length - 1])) debut = 1;
+    lignes.slice(debut).forEach(l => {
+      const f = l.split(sep).map(x => x.trim()); if (f.length < 2) return bad.push({ l, raison: 'ligne sans note' });
+      const note = f[f.length - 1], nom = f.slice(0, -1).join(' '); if (!note) return;
+      const j = jeton(note); const e = cle.get(norm(nom));
+      if (!j || j.err) return bad.push({ l, raison: j ? j.err : `note illisible « ${note} »` });
+      if (!e) return bad.push({ l, raison: 'élève introuvable dans cette classe' });
+      if (e === 'dup') return bad.push({ l, raison: 'nom ambigu (deux élèves)' });
+      ok.push({ eleve: e, ligne: j, nom: nomEleve(e), note });
+    });
+    return { ok, bad };
+  }
+  function liensOutils() {
+    const ev = N.evalId && evalCourante(); if (!ev || !$('#o-histo')) return;
+    $('#o-histo').onclick = async () => {
+      panneau('<p class="doux">Chargement…</p>');
+      const r = await sb.rpc('historique_notes', { p_eval: ev.id });
+      if (r.error) return panneau(`<div class="msg err">${esc(estReseau(r.error) ? 'Pas de connexion : l’historique a besoin du réseau.' : r.error.message)}</div>`);
+      const nom = id => { const e = S.eleves.find(x => x.id === id); return e ? nomEleve(e) : '—'; };
+      const lib = { INSERT: 'Saisie', UPDATE: 'Modification', DELETE: 'Effacement' };
+      const l = (r.data || []).map(h => `<tr><td>${quand(h.horodatage)}</td><td>${esc(h.auteur)}</td><td>${esc(nom(h.eleve_id))}</td><td>${lib[h.operation] || h.operation}</td><td>${h.operation === 'INSERT' ? '' : esc(txtNote(h.avant_statut, h.avant_valeur))}</td><td>${h.operation === 'DELETE' ? '' : esc(txtNote(h.apres_statut, h.apres_valeur))}</td></tr>`).join('');
+      panneau(`<div class="carte" style="background:#faf7ef"><h3>Historique des notes de « ${esc(ev.titre)} »</h3>${l ? `<div class="tablewrap"><table><tr><th>Quand</th><th>Qui</th><th>Élève</th><th>Action</th><th>Avant</th><th>Après</th></tr>${l}</table></div>` : '<p class="doux">Aucune saisie enregistrée.</p>'}</div>`);
+    };
+    const csv = $('#o-csv'); if (csv) csv.onclick = () => {
+      panneau(`<div class="carte" style="background:#faf7ef"><h3>Importer des notes depuis un fichier</h3>
+        <p class="petit">Un fichier CSV (Excel : « Enregistrer sous… CSV ») avec une ligne par élève : <strong>Nom ; Prénom ; Note</strong>. La note peut être un nombre (14,5), <strong>abs</strong>, <strong>disp</strong> ou <strong>nr</strong>. Les élèves sont reconnus par leur nom, sans tenir compte des accents ni des majuscules.</p>
+        <div class="barre"><input type="file" id="i-fichier" accept=".csv,.txt,text/csv,text/plain"></div>
+        <textarea id="i-texte" rows="5" style="width:100%" placeholder="… ou colle ici les lignes (Nom;Prénom;Note)"></textarea>
+        <div class="barre"><button class="b sec" id="i-analyser">Vérifier</button></div><div id="i-resultat"></div></div>`);
+      $('#i-fichier').onchange = async e => { const f = e.target.files[0]; if (!f) return; const buf = await f.arrayBuffer(); let t = new TextDecoder('utf-8').decode(buf); if (t.includes('�')) t = new TextDecoder('windows-1252').decode(buf); $('#i-texte').value = t; $('#i-analyser').click(); };
+      $('#i-analyser').onclick = () => {
+        const a = analyserCsv($('#i-texte').value, ev);
+        $('#i-resultat').innerHTML = `<p><strong>${a.ok.length}</strong> note${a.ok.length > 1 ? 's' : ''} prête${a.ok.length > 1 ? 's' : ''}${a.bad.length ? ` · <span class="tag err">${a.bad.length} ligne${a.bad.length > 1 ? 's' : ''} à corriger</span>` : ''}</p>
+          ${a.ok.length ? `<div class="tablewrap"><table><tr><th>Élève</th><th>Note</th></tr>${a.ok.map(x => `<tr><td>${esc(x.nom)}</td><td>${esc(x.note)}</td></tr>`).join('')}</table></div>` : ''}
+          ${a.bad.length ? `<div class="tablewrap"><table><tr><th>Ligne ignorée</th><th>Pourquoi</th></tr>${a.bad.map(x => `<tr><td>${esc(x.l)}</td><td>${esc(x.raison)}</td></tr>`).join('')}</table></div>` : ''}
+          ${a.ok.length ? '<button class="b" id="i-importer">Importer ces notes</button> <span class="petit">Les notes déjà saisies pour ces élèves seront remplacées.</span>' : ''}`;
+        const imp = $('#i-importer'); if (imp) imp.onclick = async () => {
+          const r = await appeler('saisir_notes', { p_eval: ev.id, p_lignes: a.ok.map(x => ({ eleve_id: x.eleve.id, ...x.ligne })) });
+          if (r.error) { dire('err', r.error); return refaire(); }
+          dire('ok', `${a.ok.length} note${a.ok.length > 1 ? 's' : ''} importée${a.ok.length > 1 ? 's' : ''}.`); recharger(chargerNotes);
+        };
+      };
+    };
+    const cp = $('#o-copie'); if (cp) cp.onclick = () => {
+      const mes = c => S.ens.filter(x => x.classe_id === c && (estAdm() || N.droits.ens.includes(x.id)));
+      const ens = c => mes(c).map(x => opt(x.id, nomMatiere(x.matiere_id), x.id === N.ensId)).join('') || opt('', 'Aucune de tes matières dans cette classe');
+      panneau(`<div class="carte" style="background:#faf7ef"><h3>Copier « ${esc(ev.titre)} »</h3><p class="petit">Crée la même évaluation (titre, type, barème, coefficient, compétences visées) sans les notes.</p>
+        <div class="barre"><select id="c-classe">${S.classes.map(c => opt(c.id, c.nom, c.id === N.classeId)).join('')}</select><select id="c-ens">${ens(N.classeId)}</select>
+        <label class="petit">Date <input type="date" id="c-date" value="${aujourdhui()}"></label><button class="b" id="c-ok">Copier</button></div></div>`);
+      $('#c-classe').onchange = e => { $('#c-ens').innerHTML = ens(e.target.value); };
+      $('#c-ok').onclick = async () => {
+        const cible = $('#c-ens').value; if (!cible) { dire('err', 'Choisis une matière que tu enseignes.'); return refaire(); }
+        const r = await appeler('copier_evaluation', { p_eval: ev.id, p_enseignement: cible, p_date: $('#c-date').value });
+        if (r.error) { dire('err', r.error); return refaire(); }
+        const e = S.ens.find(x => x.id === cible); N.classeId = e.classe_id; N.ensId = cible; const d = $('#c-date').value;
+        const per = N.periodes.find(x => d >= x.debut && d <= x.fin); if (per) N.periodeId = per.id; N.evalId = r.data;
+        dire('ok', `Évaluation copiée dans ${nomClasse(e.classe_id)} · ${nomMatiere(e.matiere_id)} (sans les notes).`); recharger(chargerNotes);
+      };
+    };
+    const pb = $('#o-pub'); if (pb) pb.onclick = () => {
+      panneau(`<div class="carte" style="background:#faf7ef"><h3>Publier dans la bibliothèque des professeurs</h3>
+        <p class="petit">Les collègues pourront retrouver et copier « ${esc(ev.titre)} » (titre, type, barème, coefficient, compétences). Les notes ne sont jamais partagées. C’est un contenu de professeur, pas un texte officiel.</p>
+        <textarea id="p-desc" rows="3" style="width:100%" placeholder="Description (ce que l’évaluation mesure, consignes, lien avec le programme…)"></textarea>
+        <div class="barre"><label class="petit"><input type="checkbox" id="p-partage" checked> Partagée avec tous les professeurs (sinon : visible de moi seul)</label><button class="b" id="p-ok">Publier</button></div></div>`);
+      $('#p-ok').onclick = async () => {
+        const r = await appeler('publier_modele', { p_eval: ev.id, p_description: $('#p-desc').value, p_partage: $('#p-partage').checked });
+        dire(r.error ? 'err' : 'ok', r.error || 'Évaluation publiée dans la bibliothèque.'); refaire();
+      };
+    };
+    const fam = $('#o-fam'); if (fam) fam.onchange = async () => {
+      const r = await sb.from('evaluations').update({ visible_familles: fam.checked }).eq('id', ev.id);
+      if (r.error) { fam.checked = !fam.checked; dire('err', estReseau(r.error) ? 'Pas de connexion : réglage non enregistré.' : r.error.message); return refaire(); }
+      ev.visible_familles = fam.checked; dire('ok', fam.checked ? 'Marquée « publiée aux familles » (visible dès l’ouverture de l’espace familles).' : 'Retirée de la publication aux familles.'); refaire();
+    };
+  }
+
+  // ---------- Bibliothèque d'évaluations entre professeurs ----------
+  const FB = { mat: '', niv: '' };
+  async function chargerBiblio() {
+    const r = await sb.from('modeles_evaluation').select('*').order('created_at', { ascending: false });
+    if (r.error) throw new Error(estReseau(r.error) ? 'Pas de connexion : la bibliothèque a besoin du réseau.' : r.error.message);
+    N.biblio = r.data || [];
+  }
+  function vueBiblio() {
+    const b = (N.biblio || []).filter(m => (!FB.mat || m.matiere_id === FB.mat) && (!FB.niv || m.niveau === FB.niv));
+    const mats = [...new Set((N.biblio || []).map(m => m.matiere_id).filter(Boolean))], nivs = [...new Set((N.biblio || []).map(m => m.niveau).filter(Boolean))].sort();
+    const cartes = b.map(m => `<div class="carte" style="background:#faf7ef"><div class="barre"><strong>${esc(m.titre)}</strong>${m.matiere_id ? `<span class="tag">${esc(nomMatiere(m.matiere_id))}</span>` : ''}${m.niveau ? `<span class="tag">${esc(m.niveau)}</span>` : ''}${m.partage ? '' : '<span class="tag">Privé</span>'}</div>
+      <p class="petit">Sur ${fmt(m.bareme)} · coef. ${fmt(m.coefficient)} · ${esc(m.type)}${(m.competences_codes || []).length ? ' · compétences ' + esc(m.competences_codes.join(', ')) : ''}</p>
+      ${m.description ? `<p>${esc(m.description)}</p>` : ''}
+      <div class="barre"><button class="b" data-utiliser="${m.id}">Utiliser dans ma classe</button><button class="b danger" data-retirer="${m.id}">${N.confirmer === m.id ? 'Confirmer le retrait' : 'Retirer'}</button></div><div id="u-${m.id}"></div></div>`).join('');
+    return `<div class="msg info">Contenus déposés par les professeurs : <strong>ce ne sont pas des textes officiels</strong>. Vérifie leur conformité avec le programme en vigueur (Bulletin officiel) avant de les utiliser.</div>
+      <div class="barre"><select id="b-mat">${opt('', 'Toutes les matières', !FB.mat)}${mats.map(m => opt(m, nomMatiere(m), FB.mat === m)).join('')}</select><select id="b-niv">${opt('', 'Tous les niveaux', !FB.niv)}${nivs.map(n => opt(n, n, FB.niv === n)).join('')}</select></div>
+      ${cartes || '<p class="doux">Aucune évaluation dans la bibliothèque. Ouvre une évaluation et choisis « Publier dans la bibliothèque ».</p>'}`;
+  }
+  function liensBiblio() {
+    $('#b-mat').onchange = e => { FB.mat = e.target.value; refaire(); }; $('#b-niv').onchange = e => { FB.niv = e.target.value; refaire(); };
+    document.querySelectorAll('[data-utiliser]').forEach(bt => bt.onclick = () => {
+      const m = N.biblio.find(x => x.id === bt.dataset.utiliser); const zone = $('#u-' + m.id);
+      const mes = S.ens.filter(x => estAdm() || N.droits.ens.includes(x.id)).sort((a, b) => nomClasse(a.classe_id).localeCompare(nomClasse(b.classe_id), 'fr'));
+      zone.innerHTML = `<div class="barre"><select id="u-ens">${mes.map(x => opt(x.id, nomClasse(x.classe_id) + ' · ' + nomMatiere(x.matiere_id), m.matiere_id === x.matiere_id && !zone.dataset.deja)).join('') || opt('', 'Aucune matière enseignée')}</select><label class="petit">Date <input type="date" id="u-date" value="${aujourdhui()}"></label><button class="b" id="u-ok">Créer l’évaluation</button></div>`;
+      $('#u-ok').onclick = async () => {
+        const cible = $('#u-ens').value; if (!cible) { dire('err', 'Tu n’enseignes aucune matière.'); return refaire(); }
+        const r = await appeler('utiliser_modele', { p_modele: m.id, p_enseignement: cible, p_date: $('#u-date').value });
+        if (r.error) { dire('err', r.error); return refaire(); }
+        const e = S.ens.find(x => x.id === cible); N.classeId = e.classe_id; N.ensId = cible; const d = $('#u-date').value;
+        const per = N.periodes.find(x => d >= x.debut && d <= x.fin); if (per) N.periodeId = per.id; N.evalId = r.data; N.vue = 'evals';
+        dire('ok', `Évaluation créée dans ${nomClasse(e.classe_id)} · ${nomMatiere(e.matiere_id)}. Vérifie la date et saisis les notes.`); recharger(chargerNotes);
+      };
+    });
+    document.querySelectorAll('[data-retirer]').forEach(bt => bt.onclick = async () => {
+      if (N.confirmer !== bt.dataset.retirer) { N.confirmer = bt.dataset.retirer; return refaire(); }
+      N.confirmer = null; const r = await sb.from('modeles_evaluation').delete().eq('id', bt.dataset.retirer);
+      if (r.error) dire('err', r.error.message); else { N.biblio = N.biblio.filter(x => x.id !== bt.dataset.retirer); dire('ok', 'Modèle retiré de la bibliothèque.'); }
+      refaire();
+    });
+  }
 
   // ---------- Fiche élève : courbe d'évolution et camembert des niveaux de compétence ----------
   const G = { id: null, mat: '', pts: [], niv: [0, 0, 0, 0], niveauxVisibles: true };

@@ -89,3 +89,11 @@ Demande d'Ahmed : aller au bout de l'étape 2 pour ne pas y revenir. Tout fait s
 - **Fiche élève** : courbe d'évolution des notes (/20, moyenne de classe en pointillés, points jaunes/rouges, filtre par matière) et camembert de la répartition des niveaux de compétence (réservé prof principal / direction).
 - Tests : `test:db` 135/135, `test:ecrans` 77/77. Cache `lc-app-v7`, `notes.js?v=3`.
 - Restes étape 3 : historique des notes modifiées (écran sur le journal d'audit), import CSV de notes, copie d'une évaluation vers une autre classe, bibliothèque d'évaluations entre professeurs (étape 7), notes visibles aux familles (phase 2), ouverture à froid de l'onglet Notes sans réseau.
+
+## 2026-11-27 — Étape 3 : toutes les améliorations restantes
+- Migration `0008` : `historique_notes` (qui a saisi / modifié / effacé quelle note, quand — lu dans le journal d'audit, visible de ceux qui voient les notes), `copier_evaluation` (même évaluation sans les notes, autre classe/matière que le professeur enseigne), bibliothèque `modeles_evaluation` + `publier_modele` / `utiliser_modele` (compétences re-liées par code selon le cycle de la classe cible).
+- Écrans (Notes › évaluation) : 🕘 Historique, ⬆ Import CSV (Nom ; Prénom ; Note — reconnaissance sans accents ni majuscules, aperçu, lignes refusées expliquées), ⧉ Copier vers une autre classe, 📚 Publier dans la bibliothèque, case « Publiée aux familles » (préparée : l'espace familles est en phase 2). Nouvel onglet Notes › **Bibliothèque** avec avertissement « contenus de professeurs, pas des textes officiels ».
+- **Ouverture à froid hors ligne** : l'onglet Notes garde une copie locale (réglages, périodes, compétences, droits, évaluations et notes vues) ; sans réseau il s'ouvre sur cette copie avec un bandeau, et les notes saisies partent au retour du réseau.
+- Tests : `test:db` 140/140, `test:ecrans` 87/87. Cache `lc-app-v8`, `notes.js?v=4`.
+- **Pour installer** : appliquer `0008` dans l'éditeur SQL, puis relancer `acces_libre.sql` en entier.
+- À valider avec le directeur : qui peut retirer un modèle de la bibliothèque (aujourd'hui son auteur et l'administration) ; durée de conservation de l'historique (étape 0b).

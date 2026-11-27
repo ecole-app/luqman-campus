@@ -84,7 +84,7 @@ const apres = await page.evaluate(id => ({ file: JSON.parse(localStorage.getItem
 ok('retour du réseau : tout est envoyé (2 saisies + validation)', apres.file === 0 && apres.abs.length === 2 && apres.abs.every(x => x.endsWith('*')) && apres.valide, JSON.stringify(apres));
 
 // --- Ouverture de l'appli sans réseau (copie gardée sur l'appareil) ---
-await page.evaluate(async m => { const c = await caches.open('lc-app-v7'); await c.put('http://localhost:8765/app/vendor/supabase-2.119.2.js', new Response(m, { headers: { 'Content-Type': 'application/javascript' } })); }, MOCK);
+await page.evaluate(async m => { const c = await caches.open('lc-app-v8'); await c.put('http://localhost:8765/app/vendor/supabase-2.119.2.js', new Response(m, { headers: { 'Content-Type': 'application/javascript' } })); }, MOCK);
 await page.setOfflineMode(true);
 const dbAvant = await page.evaluate(() => JSON.stringify(__DB));
 await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {}); await w(1500);
@@ -246,6 +246,48 @@ await page.evaluate(id => { __DB.acquisitions.length || 0; window.LCVS.ouvrirFic
 ok('fiche élève : courbe d’évolution des notes avec points et note écrite', await page.evaluate(() => { const v = document.querySelector('#vue'); return /Évolution des notes/.test(v.innerText) && v.querySelectorAll('svg[aria-label="Évolution des notes sur 20"] circle').length >= 1 && /19/.test(v.querySelector('svg[aria-label="Évolution des notes sur 20"]').textContent); }));
 ok('fiche élève : camembert des niveaux de compétence avec effectifs en légende', await page.evaluate(() => { const v = document.querySelector('#vue'); return /répartition des niveaux/.test(v.innerText) && !!v.querySelector('svg[aria-label="Répartition des niveaux de compétence"]') && /Très bonne maîtrise/.test(v.innerText); }));
 await page.screenshot({ path: CAP('7-fiche-graphiques.png'), fullPage: true });
+
+// --- Outils d'une évaluation : historique, CSV, copie, bibliothèque, familles, ouverture à froid hors ligne ---
+const orig = await page.evaluate(() => ({ c: __LC.N.classeId, e: __LC.N.ensId, p: __LC.N.periodeId, nb: __DB.evaluations.length }));
+await onglet('notes'); await w(300);
+await page.$$eval('[data-vue="evals"]', b => b[0] && b[0].click()); await w(400);
+await clic('[data-saisir]'); await w(500);
+await clic('#o-histo'); await w(600);
+ok('historique : les saisies s’affichent avec auteur et action', await page.evaluate(() => /Historique des notes/.test(document.querySelector('#n-panneau').innerText) && document.querySelectorAll('#n-panneau tr').length >= 3 && /Test Professeur/.test(document.querySelector('#n-panneau').innerText)));
+const noms = await page.evaluate(() => { const l = __DB.eleves.filter(e => e.classe_id === __LC.N.classeId); return [l[5], l[7]].map(e => e.nom + ';' + e.prenom); });
+await clic('#o-csv'); await w(300);
+await page.$eval('#i-texte', (t, a) => { t.value = 'Nom;Prénom;Note\n' + a[0] + ';11,5\n' + a[1].toUpperCase() + ';abs\nInconnu;Personne;12\n' + a[0] + ';25'; }, noms);
+await clic('#i-analyser'); await w(300);
+ok('import CSV : 2 notes prêtes, 2 lignes à corriger (inconnu, hors barème)', await page.evaluate(() => /2 notes prêtes/.test(document.querySelector('#i-resultat').innerText) && /2 lignes à corriger/.test(document.querySelector('#i-resultat').innerText) && /introuvable/.test(document.querySelector('#i-resultat').innerText) && /au-dessus du barème/.test(document.querySelector('#i-resultat').innerText)));
+await clic('#i-importer'); await w(800);
+ok('import CSV : notes enregistrées', await page.evaluate(() => { const l = __DB.eleves.filter(e => e.classe_id === __LC.N.classeId); const ev = __LC.N.evalId; const n = id => __DB.notes.find(x => x.evaluation_id === ev && x.eleve_id === id); return n(l[5].id)?.valeur === 11.5 && n(l[7].id)?.statut === 'absent'; }));
+await clic('#o-copie'); await w(300);
+await page.$eval('#c-classe', (sel, id) => { sel.value = [...sel.options].find(o => o.value !== id).value; sel.dispatchEvent(new Event('change', { bubbles: true })); }, orig.c); await w(200);
+await clic('#c-ok'); await w(900);
+ok('copie : l’évaluation est recréée sans notes dans l’autre classe', await page.evaluate(() => { const ev = __DB.evaluations; const copie = ev[ev.length - 1]; return ev.length === 2 && copie.titre === ev[0].titre && copie.enseignement_id !== ev[0].enseignement_id && __DB.notes.filter(n => n.evaluation_id === copie.id).length === 0 && /copiée dans/.test(document.querySelector('#vue').innerText); }));
+await clic('#o-pub'); await w(300);
+await page.type('#p-desc', 'Course de durée, 3 niveaux'); await clic('#p-ok'); await w(600);
+ok('bibliothèque : l’évaluation est publiée', await page.evaluate(() => __DB.modeles_evaluation.length === 1 && __DB.modeles_evaluation[0].description === 'Course de durée, 3 niveaux'));
+await clic('#o-fam'); await w(500);
+ok('familles : l’évaluation est marquée publiée aux familles', await page.evaluate(() => __DB.evaluations.find(e => e.id === __LC.N.evalId).visible_familles === true));
+await page.$eval('[data-vue="biblio"]', b => b.click()); await w(700);
+ok('bibliothèque : le modèle s’affiche avec l’avertissement « pas des textes officiels »', await page.evaluate(() => /ne sont pas des textes officiels/.test(document.querySelector('#vue').innerText) && !!document.querySelector('[data-utiliser]') && /Course de durée/.test(document.querySelector('#vue').innerText)));
+await clic('[data-utiliser]'); await w(300);
+await clic('#u-ok'); await w(900);
+ok('bibliothèque : « Utiliser » crée l’évaluation dans la classe choisie', await page.evaluate(() => __DB.evaluations.length === 3 && /Évaluation créée dans/.test(document.querySelector('#vue').innerText)));
+await page.$eval('[data-vue="biblio"]', b => b.click()); await w(600);
+await clic('[data-retirer]'); await clic('[data-retirer]'); await w(500);
+ok('bibliothèque : retrait en deux temps', await page.evaluate(() => __DB.modeles_evaluation.length === 0));
+// ouverture à froid sans réseau : les évaluations déjà vues restent consultables
+await page.$eval('[data-vue="evals"]', b => b.click()); await w(600);
+await page.evaluate(() => { __LC.N.evalId = null; });
+await page.setOfflineMode(true);
+await page.evaluate(() => { __LC.N.pret = false; __LC.N.vue = 'evals'; });
+await onglet('appel'); await onglet('notes'); await w(800);
+ok('hors ligne à froid : l’onglet Notes s’ouvre avec les évaluations de la dernière visite et un bandeau', await page.evaluate(() => /Hors ligne : données de la dernière ouverture/.test(document.querySelector('#vue').innerText) && document.querySelectorAll('[data-saisir]').length >= 1));
+await page.setOfflineMode(false);
+await page.evaluate(o => { __DB.evaluations.splice(o.nb); __DB.modeles_evaluation.length = 0; Object.assign(__LC.N, { classeId: o.c, ensId: o.e, periodeId: o.p, pret: false, vue: 'evals', evalId: null }); }, orig);
+await onglet('appel'); await onglet('notes'); await w(600);
 
 // --- Réglages (direction) ---
 await onglet('notes'); await w(300);
