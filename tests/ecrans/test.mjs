@@ -84,7 +84,7 @@ const apres = await page.evaluate(id => ({ file: JSON.parse(localStorage.getItem
 ok('retour du réseau : tout est envoyé (2 saisies + validation)', apres.file === 0 && apres.abs.length === 2 && apres.abs.every(x => x.endsWith('*')) && apres.valide, JSON.stringify(apres));
 
 // --- Ouverture de l'appli sans réseau (copie gardée sur l'appareil) ---
-await page.evaluate(async m => { const c = await caches.open('lc-app-v11'); await c.put('http://localhost:8765/app/vendor/supabase-2.119.2.js', new Response(m, { headers: { 'Content-Type': 'application/javascript' } })); }, MOCK);
+await page.evaluate(async m => { const c = await caches.open('lc-app-v12'); await c.put('http://localhost:8765/app/vendor/supabase-2.119.2.js', new Response(m, { headers: { 'Content-Type': 'application/javascript' } })); }, MOCK);
 await page.setOfflineMode(true);
 const dbAvant = await page.evaluate(() => JSON.stringify(__DB));
 await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {}); await w(1500);
@@ -327,6 +327,10 @@ ok('banque de phrases : ajout', await page.evaluate(() => __DB.banque_phrases.so
 await page.$$eval('[data-corphr]', b => b[0].click()); await w(300);
 await page.$eval('[data-phr-txt]', i => { i.value = 'Phrase de départ corrigée par le prof.'; }); await page.$$eval('[data-okphr]', b => b[0].click()); await w(400);
 ok('banque de phrases : correction d’une phrase', await page.evaluate(() => __DB.banque_phrases.some(p => p.texte === 'Phrase de départ corrigée par le prof.')) && /Phrase de départ corrigée par le prof\./.test(await texte()));
+// historique d'une appréciation
+await page.$$eval('[data-asub="matiere"]', b => b[0].click()); await w(600);
+await page.evaluate(() => { const e = __DB.appreciations.find(a => a.texte) || {}; const b = document.querySelector(`[data-histo="${e.eleve_id}"]`); b && b.click(); }); await w(400);
+ok('historique : l’ancien et le nouveau texte s’affichent', await page.evaluate(() => /Historique de cette appréciation/.test(document.querySelector('#vue').innerText) && /Ancien texte de test/.test(document.querySelector('#vue').innerText)));
 // bulletins : suivi, validation, aperçu, impression
 await onglet('bulletins'); await w(700);
 ok('bulletins : suivi du remplissage par matière', await page.evaluate(n => /Appréciations des matières/.test(document.querySelector('#vue').innerText) && new RegExp(`${n}/${n}`).test(document.querySelector('#vue').innerText) && /manquants/.test(document.querySelector('#vue').innerText), ctx4.nb));
@@ -342,6 +346,36 @@ const p1 = await page.evaluate(() => ({ n: window.__impressions, p: window.__pag
 await clic('#b-impc'); await w(200);
 const pc = await page.evaluate(() => ({ n: window.__impressions, p: window.__pages }));
 ok('impression : un bulletin, puis toute la classe (une page par élève)', p1.n === 1 && p1.p === 1 && pc.n === 2 && pc.p === ctx4.nb, JSON.stringify([p1, pc]));
+// mise en page du bulletin (direction)
+await clic('#b-mep-ouvrir'); await w(300);
+const ordreBlocs = () => page.evaluate(() => [...document.querySelectorAll('#b-rendu .bulletin > *')].map(x => x.className.split(' ')[0] || x.tagName));
+const av = await ordreBlocs();
+await page.$eval('[data-mep-bas="b:tete"]', b => b.click()); await w(200);
+const ap = await ordreBlocs();
+ok('mise en page : un bloc descend d’un cran dans l’aperçu', av[0] === 'bu-tete' && ap[0] !== 'bu-tete' && ap[1] === 'bu-tete', JSON.stringify([av.slice(0, 3), ap.slice(0, 3)]));
+await page.$eval('[data-mep-vis="c:classe"]', c => c.click()); await w(200);
+ok('mise en page : une colonne se masque (aperçu et impression)', await page.evaluate(() => document.querySelectorAll('#b-rendu thead th').length === 4 && !/classe \(min/i.test(document.querySelector('#b-rendu thead').innerText)));
+await page.$eval('[data-mep-bas="c:elements"]', b => b.click()); await w(200);
+ok('mise en page : l’ordre des colonnes change', await page.evaluate(() => /moyenne élève/i.test(document.querySelectorAll('#b-rendu thead th')[1].innerText)));
+await page.$eval('[data-mep-vis="b:signatures"]', c => c.click()); await w(200);
+ok('mise en page : les signatures se masquent', await page.evaluate(() => !document.querySelector('#b-rendu .bu-sign')));
+await page.select('#mep-taille', 'compact'); await w(200);
+ok('mise en page : taille compacte', await page.evaluate(() => !!document.querySelector('#b-rendu .bulletin.bu-compact')));
+await clic('#mep-enreg'); await w(400);
+ok('mise en page : enregistrée comme réglage par défaut', await page.evaluate(() => { const p = __DB.parametres.find(x => x.cle === 'bulletin_mise_en_page'); return p && p.valeur && p.valeur.colMasques.includes('classe') && p.valeur.masques.includes('signatures') && p.valeur.taille === 'compact' && p.valeur.blocs[0] !== 'tete'; }));
+await page.$eval('#mep-retouche', c => c.click()); await w(200);
+await page.evaluate(() => { const h = document.querySelector('#b-rendu .bu-tete h2'); h.textContent = 'Collège Luqmân — RETOUCHÉ'; h.dispatchEvent(new Event('input', { bubbles: true })); });
+await clic('#b-imp1'); await w(200);
+ok('retouche : le texte modifié part à l’impression, sans mode édition', await page.evaluate(() => /RETOUCHÉ/.test(document.querySelector('#lc-impression').innerText) && !document.querySelector('#lc-impression [contenteditable]')));
+await page.$eval('#mep-annuler-retouches', b => b.click()); await w(200);
+ok('retouche : annulable', await page.evaluate(() => !/RETOUCHÉ/.test(document.querySelector('#b-rendu').innerText)));
+await page.$eval('#mep-reset', b => b.click()); await w(200);
+ok('mise en page : rétablir la mise en page standard', await page.evaluate(() => document.querySelectorAll('#b-rendu thead th').length === 5 && !!document.querySelector('#b-rendu .bu-sign')));
+// tableau de remplissage toutes classes
+await page.$$eval('[data-bsub="toutes"]', b => b[0].click()); await w(500);
+ok('toutes les classes : une carte par classe avec progression', await page.evaluate(() => document.querySelectorAll('#vue .carte .barre-prog').length >= 1 && /Classes complètes/.test(document.querySelector('#vue').innerText)));
+await page.$$eval('[data-ouvrir-classe]', b => b[0].click()); await w(500);
+ok('toutes les classes : « Ouvrir le suivi » mène au suivi de la classe', await page.evaluate(() => /Appréciations des matières/.test(document.querySelector('#vue').innerText)));
 await page.$$eval('[data-bsub="suivi"]', b => b[0].click()); await w(500);
 await clic('[data-statut="valide"]'); await w(500);
 ok('validation des bulletins par la direction', await page.evaluate(() => __DB.bulletins_periode[0]?.statut === 'valide' && /Validé/.test(document.querySelector('#vue').innerText)));

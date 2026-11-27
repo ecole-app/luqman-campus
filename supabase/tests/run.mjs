@@ -23,6 +23,7 @@ await db.exec(readFileSync(new URL('../migrations/0008_notes_ameliorations.sql',
 await db.exec(readFileSync(new URL('../migrations/0009_modeles_auteur_optionnel.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0010_appreciations_bulletins.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0011_phrases_correction_profs.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../migrations/0012_bulletins_mise_en_page_suivi_historique.sql', import.meta.url), 'utf8'));
 
 const U = { gest:'00000000-0000-0000-0000-000000000001', dir:'00000000-0000-0000-0000-000000000002',
   prof:'00000000-0000-0000-0000-000000000003', eleve:'00000000-0000-0000-0000-000000000004',
@@ -628,6 +629,17 @@ await test('banque de phrases : un professeur corrige une phrase de départ et l
   return dep.ok && dep.res.rows.length >= 1 && mine.ok && ok1.ok && ok1.res.rows.length === 1
     && (!autre.ok || autre.res.rows.length === 0) && (!supAutre.ok || supAutre.res.rows.length === 0)
     && (!depSup.ok || depSup.res.rows.length === 0) && mineSup.ok && mineSup.res.rows.length === 1 && dirDep.ok && dirDep.res.rows.length >= 1; });
+await test('tableau de remplissage : la direction voit toutes les classes, pas un professeur ni un visiteur', async () => {
+  const d = await as('dir', `select suivi_toutes_classes('${T1}') s`); const p = await as('prof', `select suivi_toutes_classes('${T1}') s`);
+  const a = await as('anon', `select suivi_toutes_classes('${T1}') s`);
+  const liste = d.res.rows[0].s || []; const c = liste.find(x => x.classe_id === cl5);
+  return d.ok && liste.length >= 1 && c && c.eleves >= 2 && Array.isArray(c.matieres) && p.ok && p.res.rows[0].s === null && !a.ok; });
+await test('historique des appréciations : visible par le professeur de la matière, trace les modifications, fermé aux visiteurs', async () => {
+  await appr('prof', ensEps, T1, [{ eleve_id: sarah, texte: 'Texte corrigé une deuxième fois.' }]);
+  const h = await as('prof', `select * from historique_appreciations('${sarah}', '${ensEps}', '${T1}')`);
+  const autre = await as('vs2', `select * from historique_appreciations('${sarah}', '${ensEps}', '${T1}')`);
+  const a = await as('anon', `select * from historique_appreciations('${sarah}', '${ensEps}', '${T1}')`);
+  return h.ok && h.res.rows.length >= 2 && h.res.rows[0].apres === 'Texte corrigé une deuxième fois.' && h.res.rows[0].avant != null && (!autre.ok || autre.res.rows.length === 0) && !a.ok; });
 await test('appréciations et bulletins fermés aux visiteurs sans connexion (avant le mode test)', async () => {
   const a = await as('anon', `select * from appreciations`); const b = await as('anon', `select donnees_bulletins('${cl5}', '${T1}')`);
   return (!a.ok || a.res.rows.length === 0) && !b.ok; });
