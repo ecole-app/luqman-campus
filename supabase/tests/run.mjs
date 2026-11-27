@@ -20,6 +20,7 @@ await db.exec(readFileSync(new URL('../migrations/0005_notes_competences.sql', i
 await db.exec(readFileSync(new URL('../migrations/0006_socle_officiel.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0007_droits_notes.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0008_notes_ameliorations.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../migrations/0009_modeles_auteur_optionnel.sql', import.meta.url), 'utf8'));
 
 const U = { gest:'00000000-0000-0000-0000-000000000001', dir:'00000000-0000-0000-0000-000000000002',
   prof:'00000000-0000-0000-0000-000000000003', eleve:'00000000-0000-0000-0000-000000000004',
@@ -593,6 +594,11 @@ await test('accès libre : évaluations, notes, moyennes et compétences fonctio
   const n = await saisir('anon', ev, [{ eleve_id: sarah, valeur: '9,5' }]);
   const g = await as('anon', `select * from moyennes_generales('${cl5}', null)`); const c = await as('anon', 'select * from competences');
   return e.ok && n.ok && g.ok && g.res.rows.length > 0 && c.ok && c.res.rows.length > 0; });
+await test('accès libre : on peut publier et utiliser un modèle d’évaluation sans connexion (pas d’auteur)', async () => {
+  const e = await un(`select id from evaluations where titre='Libre' limit 1`);
+  const p = await as('anon', `select publier_modele('${e.id}', 'Essai libre', true) id`);
+  const u = p.ok && await as('anon', `select utiliser_modele('${p.res.rows[0].id}', '${ensEps}', '2026-12-09') id`);
+  return p.ok && u.ok; });
 await db.exec(lire('retirer_acces_libre.sql'));
 await test('après le retrait : plus de notes ni de moyennes sans connexion, et les droits par rôle reviennent', async () => {
   const a = await as('anon', 'select * from notes'); const b = await as('anon', `select * from moyennes_generales('${cl5}', null)`);
