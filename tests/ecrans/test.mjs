@@ -84,7 +84,7 @@ const apres = await page.evaluate(id => ({ file: JSON.parse(localStorage.getItem
 ok('retour du réseau : tout est envoyé (2 saisies + validation)', apres.file === 0 && apres.abs.length === 2 && apres.abs.every(x => x.endsWith('*')) && apres.valide, JSON.stringify(apres));
 
 // --- Ouverture de l'appli sans réseau (copie gardée sur l'appareil) ---
-await page.evaluate(async m => { const c = await caches.open('lc-app-v6'); await c.put('http://localhost:8765/app/vendor/supabase-2.119.2.js', new Response(m, { headers: { 'Content-Type': 'application/javascript' } })); }, MOCK);
+await page.evaluate(async m => { const c = await caches.open('lc-app-v7'); await c.put('http://localhost:8765/app/vendor/supabase-2.119.2.js', new Response(m, { headers: { 'Content-Type': 'application/javascript' } })); }, MOCK);
 await page.setOfflineMode(true);
 const dbAvant = await page.evaluate(() => JSON.stringify(__DB));
 await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {}); await w(1500);
@@ -228,6 +228,24 @@ ok('catalogue : compétence ajoutée', /Compétence propre au collège/.test(awa
 ok('catalogue : composantes officielles marquées avec leur source, ajout local marqué non officiel', await page.evaluate(() => document.querySelectorAll('#vue a[href*="education.gouv.fr"]').length >= 8 && /non officielle/.test(document.querySelector('#vue').innerText) && /décret n° 2015-372/.test(document.querySelector('#vue').innerText)));
 await page.$$eval('[data-actif]', b => b[b.length - 1].click()); await w(300);
 ok('catalogue : compétence désactivée', /Désactivée/.test(await texte()));
+
+// --- Notes hors ligne ---
+await onglet('notes'); await w(300);
+await page.$$eval('[data-vue="evals"]', b => b[0] && b[0].click()); await w(400);
+await clic('[data-saisir]'); await w(500);
+await page.setOfflineMode(true);
+await saisie(6, '14'); await w(300);
+ok('hors ligne : la note est gardée sur l’appareil et signalée en attente', await page.evaluate(() => JSON.parse(localStorage.getItem('lc_file_notes') || '[]').length === 1 && __DB.notes.filter(n => n.valeur === 14).length === 0 && /en attente d’envoi/.test(document.querySelector('#vue').innerText)));
+ok('hors ligne : la pastille de la note reste affichée', await page.evaluate(() => [...document.querySelectorAll('#n-lignes .np')].some(n => n.textContent.trim() === '14')));
+await page.setOfflineMode(false); await page.evaluate(() => window.dispatchEvent(new Event('online'))); await w(1200);
+ok('retour du réseau : la note part toute seule et la file se vide', await page.evaluate(() => JSON.parse(localStorage.getItem('lc_file_notes') || '[]').length === 0 && __DB.notes.filter(n => n.valeur === 14).length === 1));
+
+// --- Fiche élève : courbe et camembert ---
+const eleveNote = await page.evaluate(() => __DB.notes.find(n => n.valeur === 19).eleve_id);
+await page.evaluate(id => { __DB.acquisitions.length || 0; window.LCVS.ouvrirFiche(id); }, eleveNote); await w(1500);
+ok('fiche élève : courbe d’évolution des notes avec points et note écrite', await page.evaluate(() => { const v = document.querySelector('#vue'); return /Évolution des notes/.test(v.innerText) && v.querySelectorAll('svg[aria-label="Évolution des notes sur 20"] circle').length >= 1 && /19/.test(v.querySelector('svg[aria-label="Évolution des notes sur 20"]').textContent); }));
+ok('fiche élève : camembert des niveaux de compétence avec effectifs en légende', await page.evaluate(() => { const v = document.querySelector('#vue'); return /répartition des niveaux/.test(v.innerText) && !!v.querySelector('svg[aria-label="Répartition des niveaux de compétence"]') && /Très bonne maîtrise/.test(v.innerText); }));
+await page.screenshot({ path: CAP('7-fiche-graphiques.png'), fullPage: true });
 
 // --- Réglages (direction) ---
 await onglet('notes'); await w(300);

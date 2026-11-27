@@ -25,6 +25,7 @@
     .nl .ni { width:84px; text-align:center; font-weight:700; font-size:16px; padding:9px 6px; }
     .nl .np { min-width:64px; text-align:center; }
     .nl .etat { min-width:18px; font-size:13px; color:var(--ok); }
+    .nl .etat.att { color:#b45309; }
     .nl .etat.err { color:var(--rouge); flex-basis:100%; }
     .nl .com { flex-basis:100%; }
     .chips { display:flex; gap:4px; }
@@ -66,6 +67,37 @@
     const r = await sb.rpc(nom, args);
     return r.error ? { error: estReseau(r.error) ? 'Pas de connexion : rien n’a été enregistré.' : r.error.message } : r;
   };
+
+  // ---------- Notes hors ligne : file d'attente gardée sur l'appareil ----------
+  const FILE_N = 'lc_file_notes';
+  const lireFile = () => { try { return JSON.parse(localStorage.getItem(FILE_N)) || []; } catch { return []; } };
+  const ecrireFile = f => { try { localStorage.setItem(FILE_N, JSON.stringify(f)); } catch { /* stockage indisponible */ } };
+  function mettreEnFile(ev, eleve, ligne) {
+    const f = lireFile().filter(x => !(x.ev === ev && x.eleve === eleve)); f.push({ ev, eleve, ligne }); ecrireFile(f); majFile();
+  }
+  function majFile() {
+    const n = lireFile().length, el = document.getElementById('n-file'); if (!el) return;
+    el.innerHTML = n ? `<div class="msg info">⏳ ${n} note${n > 1 ? 's' : ''} en attente d’envoi : elle${n > 1 ? 's partiront' : ' partira'} dès le retour du réseau (ne ferme pas l’appli avant).</div>` : '';
+  }
+  let envoiEnCours = false;
+  async function envoyerFile() {
+    if (envoiEnCours || !navigator.onLine || !lireFile().length) return;
+    envoiEnCours = true;
+    try {
+      const evals = [...new Set(lireFile().map(x => x.ev))];
+      for (const ev of evals) {
+        const lot = lireFile().filter(x => x.ev === ev);
+        const r = await sb.rpc('saisir_notes', { p_eval: ev, p_lignes: lot.map(x => ({ eleve_id: x.eleve, ...x.ligne })) });
+        if (r.error && estReseau(r.error)) break;
+        ecrireFile(lireFile().filter(x => !lot.includes(x) && !lot.some(y => y.ev === x.ev && y.eleve === x.eleve && JSON.stringify(y.ligne) === JSON.stringify(x.ligne))));
+        if (r.error) dire('err', 'Des notes gardées sur l’appareil n’ont pas pu être envoyées : ' + r.error.message);
+        else { dire('ok', `${lot.length} note${lot.length > 1 ? 's' : ''} envoyée${lot.length > 1 ? 's' : ''} au retour du réseau.`); N.pret && N.evalId === ev && N.vue !== 'releve' && chargerEvals().then(refaire).catch(() => {}); }
+      }
+    } finally { envoiEnCours = false; majFile(); }
+  }
+  window.addEventListener('online', () => { envoyerFile(); });
+  setInterval(() => { if (lireFile().length) envoyerFile(); }, 20000);
+  setTimeout(envoyerFile, 3000);
 
   // Pastille colorée : le chiffre est toujours écrit (la couleur n'est jamais seule à porter le sens).
   function pastille(note20, texte, ctx) {
@@ -118,7 +150,7 @@
     if (r.error) throw new Error(r.error.message);
     N.bilan = r.data || [];
   }
-  async function chargerNotes() { await chargerBase(); if (N.vue === 'reglages') return; if (N.vue === 'releve') await chargerReleve(); else await chargerEvals(); }
+  async function chargerNotes() { await envoyerFile(); await chargerBase(); if (N.vue === 'reglages') return; if (N.vue === 'releve') await chargerReleve(); else await chargerEvals(); }
   async function chargerCompetences() {
     await chargerBase();
     if (N.sub === 'saisie') await chargerEvals(); else if (N.sub === 'bilan') await chargerBilan(); else { const c = await sb.from('competences').select('*').order('cycle').order('ordre'); N.competences = c.data || []; }
@@ -229,6 +261,7 @@
     }).join('');
     return `<div class="barre"><button class="b sec" id="s-retour">← Évaluations</button><strong>${esc(ev.titre)}</strong><span class="petit">${jourFr(ev.date_eval + 'T12:00:00')} · sur ${fmt(ev.bareme)} · coef. ${fmt(ev.coefficient)} · ${esc(per ? per.libelle : '')}${per && per.verrouillee ? ' 🔒 verrouillée' : ''}</span></div>
       ${per && per.verrouillee ? '<div class="msg info">Période verrouillée : seule la direction peut encore modifier les notes.</div>' : (!monEns() ? '<div class="msg info">Lecture seule : cette matière n’est pas la vôtre.</div>' : '')}
+      <div id="n-file"></div>
       <div id="n-barre">${barreStats(ev)}</div>
       <p class="petit">Tape la note (14,5). Entrée = élève suivant. <strong>Abs</strong> absent · <strong>Disp</strong> dispensé · <strong>NR</strong> non rendu (compte 0). Vide = effacer. Enregistrement automatique.</p>
       <div id="n-lignes">${lignes}</div>
@@ -267,20 +300,25 @@
   async function enregistrerLigne(el, ev, ligne) {
     const etat = el.querySelector('.etat'), eleve = el.dataset.e;
     etat.className = 'etat'; etat.textContent = '…';
-    const r = await appeler('saisir_notes', { p_eval: ev.id, p_lignes: [{ eleve_id: eleve, ...ligne }] });
-    if (r.error) { etat.className = 'etat err'; etat.textContent = r.error; return false; }
+    const brut = await sb.rpc('saisir_notes', { p_eval: ev.id, p_lignes: [{ eleve_id: eleve, ...ligne }] });
+    const hors = !!(brut.error && estReseau(brut.error));
+    if (brut.error && !hors) { etat.className = 'etat err'; etat.textContent = brut.error.message; return false; }
+    if (hors) mettreEnFile(ev.id, eleve, ligne);
     N.notes = N.notes.filter(x => !(x.evaluation_id === ev.id && x.eleve_id === eleve));
     if (ligne.statut || String(ligne.valeur ?? '').trim()) {
       const st = ligne.statut || 'note';
       N.notes.push({ evaluation_id: ev.id, eleve_id: eleve, statut: st, valeur: st === 'note' ? num(ligne.valeur) : null, commentaire: ligne.commentaire || null });
     }
-    majLigne(el, ev); etat.textContent = '✓'; setTimeout(() => { if (etat.textContent === '✓') etat.textContent = ''; }, 1800);
+    majLigne(el, ev);
+    if (hors) { etat.className = 'etat att'; etat.textContent = '⏳'; etat.title = 'Gardée sur l’appareil, envoi au retour du réseau'; return true; }
+    etat.textContent = '✓'; setTimeout(() => { if (etat.textContent === '✓') etat.textContent = ''; }, 1800);
     return true;
   }
   function liensNotes() {
     document.querySelectorAll('[data-vue]').forEach(b => b.onclick = () => { N.vue = b.dataset.vue; N.evalId = null; recharger(chargerNotes); });
     if (N.vue === 'reglages') return liensReglages();
     if (N.vue === 'releve') return liensReleve();
+    majFile();
     liensSelecteurs(chargerNotes, true); lienFiche();
     const nouvelle = $('#e-nouvelle'); if (nouvelle) nouvelle.onclick = () => { N.creation = true; refaire(); };
     const annuler = $('#e-annuler'); if (annuler) annuler.onclick = () => { N.creation = false; refaire(); };
@@ -440,6 +478,76 @@
       dire(r.error ? 'err' : 'ok', r.error ? (/duplicate|unique/i.test(r.error.message) ? 'Ce code existe déjà pour ce cycle.' : r.error.message) : 'Compétence ajoutée.');
       recharger(chargerCompetences);
     };
+  }
+
+
+  // ---------- Fiche élève : courbe d'évolution et camembert des niveaux de compétence ----------
+  const G = { id: null, mat: '', pts: [], niv: [0, 0, 0, 0], niveauxVisibles: true };
+  async function chargerGraphiquesEleve() {
+    const id = (window.__LC.W || {}).ficheId; G.id = id; G.pts = []; G.niv = [0, 0, 0, 0]; G.niveauxVisibles = true;
+    if (!id) return;
+    await chargerBase();
+    const mine = await sb.from('notes').select('evaluation_id,statut,valeur').eq('eleve_id', id);
+    const lignes = (mine.data || []).filter(x => x.statut === 'note' && x.valeur != null);
+    if (lignes.length) {
+      const ids = lignes.map(x => x.evaluation_id);
+      const [ev, tous] = await Promise.all([sb.from('evaluations').select('id,titre,date_eval,bareme,enseignement_id').in('id', ids), sb.from('notes').select('evaluation_id,statut,valeur').in('evaluation_id', ids)]);
+      const evs = new Map((ev.data || []).map(x => [x.id, x]));
+      const moy = new Map();
+      (tous.data || []).filter(x => x.statut === 'note' && x.valeur != null).forEach(x => { const e = evs.get(x.evaluation_id); if (!e) return; const m = moy.get(x.evaluation_id) || { s: 0, n: 0 }; m.s += v20(x.valeur, e.bareme); m.n++; moy.set(x.evaluation_id, m); });
+      G.pts = lignes.map(x => { const e = evs.get(x.evaluation_id); if (!e) return null; const en = S.ens.find(y => y.id === e.enseignement_id); const m = moy.get(x.evaluation_id);
+        return { date: e.date_eval, titre: e.titre, mat: en ? en.matiere_id : '', note: v20(x.valeur, e.bareme), brut: x.valeur, bareme: e.bareme, classe: m && m.n ? m.s / m.n : null }; })
+        .filter(Boolean).sort((a, b) => a.date.localeCompare(b.date));
+    }
+    const el = S.eleves.find(x => x.id === id);
+    if (el) {
+      const b = await sb.rpc('bilan_competences', { p_classe: el.classe_id, p_periode: null });
+      const mien = (b.data || []).filter(x => x.eleve_id === id && x.niveau_retenu);
+      mien.forEach(x => { if (x.niveau_retenu >= 1 && x.niveau_retenu <= 4) G.niv[x.niveau_retenu - 1]++; });
+      G.niveauxVisibles = !b.error && ((b.data || []).length > 0 || N.droits.admin || N.droits.pp.includes(el.classe_id));
+    }
+  }
+  function svgCourbe(pts) {
+    const W = 640, H = 240, gx = 44, gy = 16, dx = W - gx - 16, dy = H - gy - 34;
+    const X = i => gx + (pts.length === 1 ? dx / 2 : i * dx / (pts.length - 1)), Y = v => gy + dy - Math.max(0, Math.min(20, v)) / 20 * dy;
+    const grille = [0, 5, 10, 15, 20].map(v => `<line x1="${gx}" x2="${W - 16}" y1="${Y(v)}" y2="${Y(v)}" stroke="#e5dfcf"/><text x="${gx - 8}" y="${Y(v) + 4}" text-anchor="end" font-size="11" fill="#6b6b6b">${v}</text>`).join('');
+    const seuils = `<line x1="${gx}" x2="${W - 16}" y1="${Y(N.params.haut)}" y2="${Y(N.params.haut)}" stroke="#e6c800" stroke-dasharray="2 4"/><line x1="${gx}" x2="${W - 16}" y1="${Y(N.params.bas)}" y2="${Y(N.params.bas)}" stroke="#e11d00" stroke-dasharray="2 4"/>`;
+    const cl = pts.map((p, i) => p.classe == null ? null : [X(i), Y(p.classe)]).filter(Boolean);
+    const ligneClasse = cl.length > 1 ? `<polyline fill="none" stroke="#8a8a8a" stroke-width="2" stroke-dasharray="6 5" points="${cl.map(q => q.join(',')).join(' ')}"/>` : '';
+    const ligne = pts.length > 1 ? `<polyline fill="none" stroke="#0b5d4b" stroke-width="2.5" points="${pts.map((p, i) => X(i) + ',' + Y(p.note)).join(' ')}"/>` : '';
+    const points = pts.map((p, i) => { const c = p.note >= N.params.haut ? '#ffe600' : p.note < N.params.bas ? '#e11d00' : '#0b5d4b';
+      return `<circle cx="${X(i)}" cy="${Y(p.note)}" r="6.5" fill="${c}" stroke="#0b5d4b" stroke-width="1.5"><title>${esc(p.titre)} · ${jourFr(p.date + 'T12:00:00')} : ${fmt(p.brut)}/${fmt(p.bareme)}${p.classe != null ? ' (classe ' + fmt(p.classe) + '/20)' : ''}</title></circle>
+        <text x="${X(i)}" y="${Y(p.note) - 11}" text-anchor="middle" font-size="11" font-weight="700" fill="#222">${fmt(Math.round(p.note * 10) / 10)}</text>`; }).join('');
+    const etiq = pts.map((p, i) => (pts.length <= 8 || i % Math.ceil(pts.length / 8) === 0) ? `<text x="${X(i)}" y="${H - 10}" text-anchor="middle" font-size="10" fill="#6b6b6b">${esc(p.date.slice(8, 10) + '/' + p.date.slice(5, 7))}</text>` : '').join('');
+    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Évolution des notes sur 20" style="width:100%;max-width:680px;height:auto">${grille}${seuils}${ligneClasse}${ligne}${points}${etiq}</svg>`;
+  }
+  function svgCamembert(niv) {
+    const tot = niv.reduce((a, b) => a + b, 0); if (!tot) return '';
+    const cols = ['#c9d3d8', '#8fa7b3', '#3f8f7a', '#0b5d4b'], R = 70, C = 80; let a0 = -Math.PI / 2;
+    const arcs = niv.map((n, i) => { if (!n) return ''; const a1 = a0 + n / tot * 2 * Math.PI;
+      if (n === tot) { a0 = a1; return `<circle cx="${C}" cy="${C}" r="${R}" fill="${cols[i]}"/>`; }
+      const d = `M${C},${C} L${C + R * Math.cos(a0)},${C + R * Math.sin(a0)} A${R},${R} 0 ${a1 - a0 > Math.PI ? 1 : 0} 1 ${C + R * Math.cos(a1)},${C + R * Math.sin(a1)} Z`; a0 = a1;
+      return `<path d="${d}" fill="${cols[i]}" stroke="#fff" stroke-width="2"><title>${esc(N.niveaux[i])} : ${n}</title></path>`; }).join('');
+    const legende = niv.map((n, i) => `<div style="display:flex;gap:8px;align-items:center;margin:3px 0"><span style="width:14px;height:14px;border-radius:3px;background:${cols[i]};display:inline-block"></span><span><strong>${n}</strong> · ${i + 1} ${esc(N.niveaux[i])}</span></div>`).join('');
+    return `<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap"><svg viewBox="0 0 160 160" role="img" aria-label="Répartition des niveaux de compétence" style="width:160px;height:160px">${arcs}</svg><div>${legende}</div></div>`;
+  }
+  function vueGraphiquesEleve() {
+    if (!G.id) return '';
+    const mats = [...new Set(G.pts.map(p => p.mat).filter(Boolean))];
+    const pts = G.mat ? G.pts.filter(p => p.mat === G.mat) : G.pts;
+    const sel = mats.length > 1 ? `<select id="g-mat" style="max-width:260px">${opt('', 'Toutes les matières', !G.mat)}${mats.map(m => opt(m, nomMatiere(m), G.mat === m)).join('')}</select>` : '';
+    const courbe = pts.length ? `<div class="barre">${sel}<span class="petit">Ligne pleine : l’élève · pointillés gris : moyenne de la classe · points jaunes ≥ ${fmt(N.params.haut)} · rouges < ${fmt(N.params.bas)}</span></div>${svgCourbe(pts)}`
+      : '<p class="doux">Aucune note visible pour cet élève.</p>';
+    const tot = G.niv.reduce((a, b) => a + b, 0);
+    const camembert = tot ? svgCamembert(G.niv) : `<p class="doux">${G.niveauxVisibles ? 'Aucun niveau de compétence évalué pour le moment.' : 'La répartition des compétences est réservée au professeur principal et à la direction.'}</p>`;
+    return `<div class="carte"><h2>Évolution des notes</h2>${courbe}</div><div class="carte"><h2>Compétences du socle : répartition des niveaux</h2>${camembert}</div>`;
+  }
+  function liensGraphiquesEleve() { const m = $('#g-mat'); if (m) m.onchange = () => { G.mat = m.value; refaire(); }; }
+  const baseFiche = { vue: VUES.fiche, liens: LIENS.fiche, load: LOAD.fiche };
+  if (baseFiche.vue) {
+    VUES.fiche = () => { const h = baseFiche.vue(); return h.includes('Absences, retards, sorties') ? h + vueGraphiquesEleve() : h; };
+    LIENS.fiche = () => { baseFiche.liens(); liensGraphiquesEleve(); };
+    LOAD.fiche = async () => { await baseFiche.load(); try { await chargerGraphiquesEleve(); } catch { G.pts = []; } };
   }
 
   // ---------- Branchement ----------
