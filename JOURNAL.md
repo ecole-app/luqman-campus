@@ -101,3 +101,6 @@ Demande d'Ahmed : aller au bout de l'étape 2 pour ne pas y revenir. Tout fait s
 ## 2026-11-27 — Correctif : publication d'un modèle sans connexion
 - Trouvé au test réel : en mode test (sans connexion) la publication dans la bibliothèque échouait (`created_by` obligatoire). Migration `0009` : auteur facultatif (rempli automatiquement dès qu'on est connecté). Test ajouté (141/141). Leçon : les tests de base simulent un utilisateur connecté, le mode test sans connexion doit avoir ses propres tests pour chaque nouvelle fonction.
 - **Pour installer** : appliquer `0009` dans l'éditeur SQL.
+
+## 2026-11-27 — Points à valider avec le directeur regroupés
+- Décision d'Ahmed : tout ce qui demande l'avis du directeur est gardé pour la fin. Liste dans `docs/A-VALIDER-AVEC-LE-DIRECTEUR.md` (9 points à ce jour), à compléter à chaque étape.

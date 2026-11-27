@@ -7,3 +7,4 @@
 - Toute modification de la base passe par un fichier dans `supabase/migrations/` et doit garder `npm run test:db` au vert.
 - Un travail = une branche + une pull request. Pas de push direct sur `main` une fois le directeur sur le projet.
 - `supabase/dev_only/` : scripts à usage de test uniquement (accès libre temporaire). Ils ne sont jamais appliqués à la production et doivent être retirés avant l'étape 0b (`docs/ETAPE-0B.md`).
+- Tout point à décider avec le directeur est consigné dans `docs/A-VALIDER-AVEC-LE-DIRECTEUR.md` (on le passe avec lui à la fin). L'y ajouter dès qu'il apparaît.
