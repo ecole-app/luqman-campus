@@ -74,3 +74,4 @@ grant execute on function
   public.voit_toute_la_classe(uuid), public.voit_notes_ens(uuid), public.voit_notes_eval(uuid), public.voit_bilan_eleve(uuid),
   public.saisir_notes(uuid, jsonb), public.saisir_acquisitions(uuid, jsonb),
   public.moyennes_matieres(uuid, uuid), public.moyennes_generales(uuid, uuid), public.bilan_competences(uuid, uuid) to anon;
+grant execute on function public.mes_droits_notes() to anon;

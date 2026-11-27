@@ -229,6 +229,31 @@ ok('catalogue : composantes officielles marquées avec leur source, ajout local 
 await page.$$eval('[data-actif]', b => b[b.length - 1].click()); await w(300);
 ok('catalogue : compétence désactivée', /Désactivée/.test(await texte()));
 
+// --- Réglages (direction) ---
+await onglet('notes'); await w(300);
+await page.$$eval('[data-vue="reglages"]', b => b[0].click()); await w(400);
+ok('réglages : la direction voit l’onglet et les 4 niveaux', /Qui voit les notes/.test(await texte()) && (await page.$$('.r-niv')).length === 4);
+await page.$eval('#r-vis', c => c.click()); await page.$eval('#r-haut', i => { i.value = '17'; }); await page.$eval('#r-bas', i => { i.value = '9,5'; });
+await clic('#r-enreg'); await w(400);
+ok('réglages enregistrés (visibilité, seuils)', await page.evaluate(() => { const p = k => __DB.parametres.find(x => x.cle === k); return p('notes_visibles_tout_personnel').valeur === true && p('note_seuil_haut').valeur === 17 && p('note_seuil_bas').valeur === 9.5; }) && /Réglages enregistrés/.test(await texte()));
+await page.$eval('#r-haut', i => { i.value = '5'; }); await clic('#r-enreg'); await w(300);
+ok('réglages : seuil rouge au-dessus du jaune refusé', /plus bas que le seuil jaune/.test(await texte()));
+await page.$eval('#r-haut', i => { i.value = '18'; }); await page.$eval('#r-bas', i => { i.value = '8'; }); await clic('#r-enreg'); await w(300);
+
+// --- Boutons selon le rôle (professeur simple : ni sa matière, ni principal, ni direction) ---
+await page.evaluate(() => { __DB.__droits = { admin: false, classes_pp: [], enseignements: [] }; __LC.N.pret = false; __LC.N.vue = 'evals'; __LC.N.evalId = null; });
+await onglet('appel'); await onglet('notes'); await w(600);
+ok('rôle prof (pas sa matière) : pas de bouton Réglages, ni Nouvelle évaluation', await page.evaluate(() => !document.querySelector('[data-vue="reglages"]') && ![...document.querySelectorAll('#vue button')].some(b => /Nouvelle évaluation/.test(b.textContent)) && /Lecture seule/.test(document.querySelector('#vue').innerText)));
+await page.$eval('[data-vue="releve"]', b => b.click()); await w(500);
+ok('rôle prof : pas de bouton de verrouillage de période', await page.evaluate(() => !document.querySelector('#r-verrou')));
+await onglet('competences'); await w(500);
+await page.$$eval('[data-sub="catalogue"]', b => b[0].click()); await w(400);
+ok('rôle prof : catalogue en lecture seule', await page.evaluate(() => !document.querySelector('#k-ajout') && !document.querySelector('[data-actif]') && /Lecture seule/.test(document.querySelector('#vue').innerText)));
+await page.$$eval('[data-sub="bilan"]', b => b[0].click()); await w(500);
+ok('rôle prof : pas de correction de bilan', await page.evaluate(() => !document.querySelector('[data-bil]')));
+await page.evaluate(() => { __DB.__droits = null; __LC.N.pret = false; __LC.N.vue = 'evals'; });
+await onglet('appel');
+
 // Suppression en deux temps
 await onglet('notes'); await w(300);
 await page.$$eval('[data-vue="evals"]', b => b[0] && b[0].click()); await w(400);
