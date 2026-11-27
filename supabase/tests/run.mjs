@@ -673,7 +673,13 @@ await test('accès libre : appréciations, appréciation générale et bulletin 
   const g = await as('anon', `select saisir_appreciation_generale('${sarah}', '${T2}', 'Mode test', null)`);
   const b = await as('anon', `select donnees_bulletins('${cl5}', '${T2}') b`);
   return a.ok && g.ok && b.ok && b.res.rows[0].b.eleves.length > 0; });
+await test('accès libre : les réglages sont lisibles et modifiables sans connexion (mode test)', async () => {
+  const a = await as('anon', `select valeur from parametres where cle='mentions_bulletin'`);
+  const b = await as('anon', `update parametres set valeur='17' where cle='note_seuil_haut' returning cle`);
+  await db.exec(`update parametres set valeur='18' where cle='note_seuil_haut'`);
+  return a.ok && Array.isArray(a.res.rows[0].valeur) && b.ok && b.res.rows.length === 1; });
 await db.exec(lire('retirer_acces_libre.sql'));
+await test('après le retrait : réglages fermés sans connexion', async () => { const r = await as('anon', 'select * from parametres'); return !r.ok || r.res.rows.length === 0; });
 await test('après le retrait : plus de notes ni de moyennes sans connexion, et les droits par rôle reviennent', async () => {
   const a = await as('anon', 'select * from notes'); const b = await as('anon', `select * from moyennes_generales('${cl5}', null)`);
   const c = await as('anon', `insert into evaluations(enseignement_id, titre, date_eval) values ('${ensEps}', 'Intrus', '2026-11-12')`);

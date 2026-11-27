@@ -144,7 +144,7 @@
         'avis_seuil_avertissement', 'avis_compliments', 'avis_felicitations', 'avis_felicitations_min_matiere', 'avis_eloges', 'avis_eloges_min_matiere'])]);
     if (!pr.error) B.params = pr.data || [];
     B.maxAppr = Number(valParam('appreciation_longueur_max', 400)); B.maxElem = Number(valParam('elements_programme_longueur_max', 600));
-    const m = valParam('mentions_bulletin', []); B.mentions = Array.isArray(m) ? m : [];
+    const m = valParam('mentions_bulletin', null); B.mentions = Array.isArray(m) && m.length ? m : ['Éloges', 'Félicitations', 'Compliments', 'Encouragements', 'Avertissement travail', 'Avertissement comportement', 'Avertissement assiduité'];
     B.avis = { avertissement: Number(valParam('avis_seuil_avertissement', 10)), compliments: Number(valParam('avis_compliments', 14)), felicitations: Number(valParam('avis_felicitations', 16)),
       felicitationsMin: Number(valParam('avis_felicitations_min_matiere', 10)), eloges: Number(valParam('avis_eloges', 18)), elogesMin: Number(valParam('avis_eloges_min_matiere', 16)) };
     if (!B.classeId || !S.classes.some(c => c.id === B.classeId)) B.classeId = N.classeId || (S.classes[0] || {}).id || '';
