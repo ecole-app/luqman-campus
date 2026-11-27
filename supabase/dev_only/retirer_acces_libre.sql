@@ -68,3 +68,4 @@ revoke execute on function
   public.moyennes_matieres(uuid, uuid), public.moyennes_generales(uuid, uuid), public.bilan_competences(uuid, uuid) from anon;
 revoke all on public.competences, public.evaluations, public.evaluation_competences,
   public.notes, public.acquisitions, public.bilans_competences from anon;
+revoke execute on function public.mes_droits_notes() from anon;

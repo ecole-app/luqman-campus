@@ -18,6 +18,7 @@ await db.exec(readFileSync(new URL('../migrations/0003_vie_scolaire.sql', import
 await db.exec(readFileSync(new URL('../migrations/0004_vie_scolaire_complements.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0005_notes_competences.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0006_socle_officiel.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../migrations/0007_droits_notes.sql', import.meta.url), 'utf8'));
 
 const U = { gest:'00000000-0000-0000-0000-000000000001', dir:'00000000-0000-0000-0000-000000000002',
   prof:'00000000-0000-0000-0000-000000000003', eleve:'00000000-0000-0000-0000-000000000004',
@@ -514,6 +515,11 @@ await test('socle : une compétence officielle ne se modifie ni ne se supprime ;
 await test('socle : une compétence ajoutée par le collège n’est jamais « officielle »', async () => {
   const r = await as('dir', `insert into competences(cycle, code, domaine, libelle, officiel, source_ref) values (4, 'LOC1', 'Local', 'Compétence du collège', true, 'faux') returning officiel, source_ref`);
   return r.ok && r.res.rows[0].officiel === false && r.res.rows[0].source_ref === null; });
+await test('droits d’affichage : la direction est admin ; le prof connaît sa matière ; le prof principal sa classe', async () => {
+  const d = await as('dir', 'select mes_droits_notes() r'); const p = await as('prof', 'select mes_droits_notes() r'); const p2 = await as('prof2', 'select mes_droits_notes() r');
+  return d.res.rows[0].r.admin === true && p.res.rows[0].r.admin === false && p.res.rows[0].r.enseignements.includes(ensEps)
+      && p2.res.rows[0].r.classes_pp.includes(cl5) && p2.res.rows[0].r.enseignements.includes(ensMath); });
+await test('droits d’affichage : fermés aux visiteurs sans connexion', async () => { const r = await as('anon', 'select mes_droits_notes()'); return !r.ok; });
 
 // ---------- Visibilité des notes (réglage notes_visibles_tout_personnel) ----------
 await test('visibilité : un professeur ne lit que les notes de sa matière (EPS), pas celles de la matière d’un collègue', async () => {

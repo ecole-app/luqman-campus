@@ -5,7 +5,7 @@
 (function () {
   const { LOAD, insererOnglet } = window.LCVS;
   const { nomEleve, estReseau, refaire, lienFiche, jourFr } = window.LCVS.outils;
-  const N = { classeId: '', ensId: '', periodeId: undefined, vue: 'evals', evalId: null, sub: 'saisie', periodes: [], params: { haut: 18, bas: 8 }, niveaux: ['Maîtrise insuffisante', 'Maîtrise fragile', 'Maîtrise satisfaisante', 'Très bonne maîtrise'],
+  const N = { droits: { admin: false, pp: [], ens: [] }, classeId: '', ensId: '', periodeId: undefined, vue: 'evals', evalId: null, sub: 'saisie', periodes: [], params: { haut: 18, bas: 8 }, niveaux: ['Maîtrise insuffisante', 'Maîtrise fragile', 'Maîtrise satisfaisante', 'Très bonne maîtrise'],
     competences: [], evals: [], evalComps: [], notes: [], acqs: [], moyM: [], moyG: [], bilan: [], ouvertCom: new Set(), confirmer: null, creation: false, pret: false };
   window.__LC.N = N;
 
@@ -51,6 +51,9 @@
   const aujourdhui = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   const COULEURS_NIV = ['#d9480f', '#e08a00', '#2f9e5b', '#0b7285'];
   const cycleDe = niveau => niveau === '6e' ? 3 : 4;
+  const estAdm = () => !!N.droits.admin;
+  const monEns = () => estAdm() || N.droits.ens.includes(N.ensId);
+  const estPP = () => estAdm() || N.droits.pp.includes(N.classeId);
   const classe = () => S.classes.find(c => c.id === N.classeId);
   const ensDeClasse = () => S.ens.filter(x => x.classe_id === N.classeId).sort((a, b) => nomMatiere(a.matiere_id).localeCompare(nomMatiere(b.matiere_id), 'fr'));
   const elevesClasse = () => S.eleves.filter(e => e.classe_id === N.classeId);
@@ -77,15 +80,17 @@
   // ---------- Chargements ----------
   async function chargerBase() {
     if (N.pret) return;
-    const [p, pr, c, en] = await Promise.all([
+    const [p, pr, c, en, dr] = await Promise.all([
       sb.from('periodes').select('id,numero,libelle,debut,fin,verrouillee,annees_scolaires!inner(active)').eq('annees_scolaires.active', true).order('numero'),
-      sb.from('parametres').select('cle,valeur').in('cle', ['note_seuil_haut', 'note_seuil_bas', 'niveaux_competences']),
+      sb.from('parametres').select('cle,valeur').in('cle', ['note_seuil_haut', 'note_seuil_bas', 'niveaux_competences', 'notes_visibles_tout_personnel', 'note_non_rendu_compte_zero']),
       sb.from('competences').select('*').order('cycle').order('ordre'),
-      sb.from('enseignements').select('*')]);
+      sb.from('enseignements').select('*'),
+      sb.rpc('mes_droits_notes')]);
+    if (!dr.error && dr.data) N.droits = { admin: !!dr.data.admin, pp: dr.data.classes_pp || [], ens: dr.data.enseignements || [] };
     if (!en.error && en.data && en.data.length) S.ens = en.data;
     if (p.error) throw new Error(estReseau(p.error) ? 'Pas de connexion : les notes ont besoin du réseau.' : p.error.message);
     N.periodes = p.data || []; N.competences = c.data || [];
-    (pr.data || []).forEach(x => { if (x.cle === 'note_seuil_haut') N.params.haut = Number(x.valeur); if (x.cle === 'note_seuil_bas') N.params.bas = Number(x.valeur); if (x.cle === 'niveaux_competences' && Array.isArray(x.valeur)) N.niveaux = x.valeur; });
+    (pr.data || []).forEach(x => { if (x.cle === 'note_seuil_haut') N.params.haut = Number(x.valeur); if (x.cle === 'note_seuil_bas') N.params.bas = Number(x.valeur); if (x.cle === 'niveaux_competences' && Array.isArray(x.valeur)) N.niveaux = x.valeur; if (x.cle === 'notes_visibles_tout_personnel') N.params.visTout = x.valeur === true || x.valeur === 'true'; if (x.cle === 'note_non_rendu_compte_zero') N.params.nonRendu = !(x.valeur === false || x.valeur === 'false'); });
     if (!N.classeId) N.classeId = (S.classes[0] || {}).id || '';
     if (!N.ensId || !ensDeClasse().some(x => x.id === N.ensId)) N.ensId = (ensDeClasse()[0] || {}).id || '';
     if (N.periodeId === undefined) { const j = aujourdhui(); N.periodeId = (N.periodes.find(x => j >= x.debut && j <= x.fin) || N.periodes.filter(x => x.debut <= j).pop() || N.periodes[0] || {}).id || ''; }
@@ -113,7 +118,7 @@
     if (r.error) throw new Error(r.error.message);
     N.bilan = r.data || [];
   }
-  async function chargerNotes() { await chargerBase(); if (N.vue === 'releve') await chargerReleve(); else await chargerEvals(); }
+  async function chargerNotes() { await chargerBase(); if (N.vue === 'reglages') return; if (N.vue === 'releve') await chargerReleve(); else await chargerEvals(); }
   async function chargerCompetences() {
     await chargerBase();
     if (N.sub === 'saisie') await chargerEvals(); else if (N.sub === 'bilan') await chargerBilan(); else { const c = await sb.from('competences').select('*').order('cycle').order('ordre'); N.competences = c.data || []; }
@@ -149,10 +154,42 @@
   }
   function vueNotes() {
     if (!S.classes.length) return `<div class="carte"><h2>Notes</h2><p class="doux">Crée d’abord des classes et des élèves.</p></div>`;
-    const nav = `<div class="sousnav"><button data-vue="evals" class="${N.vue !== 'releve' ? 'on' : ''}">Évaluations</button><button data-vue="releve" class="${N.vue === 'releve' ? 'on' : ''}">Relevé de classe</button></div>`;
+    const nav = `<div class="sousnav"><button data-vue="evals" class="${N.vue !== 'releve' ? 'on' : ''}">Évaluations</button><button data-vue="releve" class="${N.vue === 'releve' ? 'on' : ''}">Relevé de classe</button>${estAdm() ? `<button data-vue="reglages" class="${N.vue === 'reglages' ? 'on' : ''}">Réglages</button>` : ''}</div>`;
+    if (N.vue === 'reglages' && estAdm()) return `${msgNotes()}<div class="carte"><h2>Notes</h2>${nav}${vueReglages()}</div>`;
     if (N.vue === 'releve') return `${msgNotes()}<div class="carte"><h2>Notes</h2>${nav}${selecteurs(false)}${vueReleve()}</div>`;
     const ev = N.evalId && evalCourante();
     return `${msgNotes()}<div class="carte"><h2>Notes</h2>${nav}${selecteurs(true)}${ev ? vueSaisie(ev) : vueListeEvals()}</div>`;
+  }
+  function vueReglages() {
+    return `<p class="petit">Réglages réservés à la direction. Ils s’appliquent à toutes les classes.</p>
+      <div class="carte" style="background:#faf7ef"><h3>Qui voit les notes</h3>
+        <label><input type="checkbox" id="r-vis" ${N.params.visTout ? 'checked' : ''}> Tout le personnel voit toutes les notes</label>
+        <p class="petit">Décoché (conseillé) : chaque professeur voit les notes de ses matières, le professeur principal celles de sa classe, la direction tout.</p></div>
+      <div class="carte" style="background:#faf7ef"><h3>Couleurs des notes</h3><div class="barre">
+        <label class="petit">Jaune pétillant à partir de <input id="r-haut" inputmode="decimal" style="width:70px" value="${fmt(N.params.haut)}"> /20</label>
+        <label class="petit">Rouge écarlate sous <input id="r-bas" inputmode="decimal" style="width:70px" value="${fmt(N.params.bas)}"> /20</label></div></div>
+      <div class="carte" style="background:#faf7ef"><h3>Moyennes</h3>
+        <label><input type="checkbox" id="r-nr" ${N.params.nonRendu !== false ? 'checked' : ''}> Un devoir « non rendu » compte 0</label></div>
+      <div class="carte" style="background:#faf7ef"><h3>Niveaux de compétence</h3><div class="barre">
+        ${N.niveaux.map((n, i) => `<label class="petit">${i + 1} <input class="r-niv" value="${esc(n)}" style="width:190px"></label>`).join('')}</div></div>
+      <button class="b" id="r-enreg">Enregistrer les réglages</button>`;
+  }
+  function liensReglages() {
+    const non = m => { dire('err', m); refaire(); };
+    const nb = t => Number(String(t).replace(',', '.'));
+    $('#r-enreg').onclick = async () => {
+      const haut = nb($('#r-haut').value), bas = nb($('#r-bas').value), niv = [...document.querySelectorAll('.r-niv')].map(x => x.value.trim());
+      if (!(haut >= 0 && haut <= 20 && bas >= 0 && bas <= 20)) return non( 'Les seuils doivent être des notes entre 0 et 20.');
+      if (!(bas < haut)) return non( 'Le seuil rouge doit être plus bas que le seuil jaune.');
+      if (niv.some(x => !x)) return non( 'Les 4 niveaux de compétence doivent avoir un nom.');
+      const vis = $('#r-vis').checked, nr = $('#r-nr').checked;
+      const maj = (cle, valeur) => sb.from('parametres').update({ valeur }).eq('cle', cle);
+      const rs = await Promise.all([maj('note_seuil_haut', haut), maj('note_seuil_bas', bas), maj('notes_visibles_tout_personnel', vis), maj('note_non_rendu_compte_zero', nr), maj('niveaux_competences', niv)]);
+      const e = rs.find(r => r.error);
+      if (e) return non( e.error.message);
+      Object.assign(N.params, { haut, bas, visTout: vis, nonRendu: nr }); N.niveaux = niv;
+      dire('ok', 'Réglages enregistrés.'); refaire();
+    };
   }
   function vueListeEvals() {
     const c = classe(), cy = c ? cycleDe(c.niveau) : 4, cat = N.competences.filter(x => x.cycle === cy && x.actif);
@@ -161,8 +198,8 @@
       return `<tr><td>${jourFr(ev.date_eval + 'T12:00:00')}</td><td><strong>${esc(ev.titre)}</strong></td><td>${esc(ev.type)}</td><td>/${fmt(ev.bareme)}</td><td>×${fmt(ev.coefficient)}</td>
         <td>${s.nbNotes}/${elevesClasse().length}</td><td>${s.moy == null ? '—' : pastilleEval(s.moy, ev.bareme)}</td><td>${s.moy == null ? '' : `${fmt(s.min)} – ${fmt(s.max)}`}</td>
         <td>${nbc ? `<span class="tag">${nbc} compétence${nbc > 1 ? 's' : ''}</span>` : ''}</td>
-        <td style="white-space:nowrap"><button class="b" data-saisir="${ev.id}">Saisir</button>
-        <button class="b danger" data-suppr="${ev.id}">${N.confirmer === ev.id ? 'Confirmer la suppression' : 'Supprimer'}</button></td></tr>`;
+        <td style="white-space:nowrap"><button class="b" data-saisir="${ev.id}">${monEns() ? 'Saisir' : 'Voir'}</button>
+        ${monEns() ? `<button class="b danger" data-suppr="${ev.id}">${N.confirmer === ev.id ? 'Confirmer la suppression' : 'Supprimer'}</button>` : ''}</td></tr>`;
     }).join('');
     const form = N.creation ? `<div class="carte" style="background:#faf7ef"><h3>Nouvelle évaluation</h3><div class="barre">
         <input id="e-titre" placeholder="Titre (ex. Contrôle chapitre 3)" style="flex:1;min-width:200px">
@@ -172,25 +209,26 @@
         ${cat.length ? `<details><summary class="petit" style="cursor:pointer">Compétences évaluées (cycle ${cy}) — facultatif</summary>${cat.map(x => `<label class="petit" style="display:block;margin:4px 0"><input type="checkbox" data-comp="${x.id}"> <strong>${esc(x.code)}</strong> ${esc(x.libelle)}</label>`).join('')}</details>` : ''}
         <p class="petit">La période est déduite de la date. La note est comptée sur 20 dans la moyenne, quel que soit le barème.</p>
         <button class="b" id="e-creer">Créer l’évaluation</button> <button class="b sec" id="e-annuler">Annuler</button></div>`
-      : `<button class="b" id="e-nouvelle">＋ Nouvelle évaluation</button>`;
+      : (monEns() ? `<button class="b" id="e-nouvelle">＋ Nouvelle évaluation</button>` : `<p class="petit">Lecture seule : cette matière n’est pas la vôtre.</p>`);
     return `${form}<div class="tablewrap" style="margin-top:10px">${lignes ? `<table><tr><th>Date</th><th>Évaluation</th><th>Type</th><th>Barème</th><th>Coef.</th><th>Notées</th><th>Moyenne</th><th>Min – max</th><th></th><th></th></tr>${lignes}</table>`
       : '<p class="doux">Aucune évaluation pour cette matière et cette période.</p>'}</div>`;
   }
   function vueSaisie(ev) {
     const per = periodeDe(ev.periode_id);
+    const lecture = !monEns() || !!(per && per.verrouillee && !estAdm());
     const lignes = elevesClasse().map(e => {
       const n = N.notes.find(x => x.evaluation_id === ev.id && x.eleve_id === e.id), st = n ? n.statut : null;
       const val = !n ? '' : st === 'note' ? fmt(n.valeur) : statutTxt[st];
       const aCom = n && n.commentaire;
       return `<div class="nl" data-e="${e.id}"><span class="n"><button class="lien" data-fiche="${e.id}">${esc(nomEleve(e))}</button></span>
-        <input class="ni" inputmode="decimal" autocomplete="off" value="${esc(val)}" aria-label="Note de ${esc(nomEleve(e))}">
+        <input class="ni" ${lecture ? 'disabled' : ''} inputmode="decimal" autocomplete="off" value="${esc(val)}" aria-label="Note de ${esc(nomEleve(e))}">
         <span class="np">${n && st === 'note' ? pastilleEval(n.valeur, ev.bareme) : ''}</span>
-        <span class="chips">${Object.entries(statutTxt).map(([k, l]) => `<button data-ch="${k}" class="${st === k ? 'on' : ''}" title="${{ absent: 'Absent', dispense: 'Dispensé', non_rendu: 'Non rendu (compte 0)' }[k]}">${l}</button>`).join('')}</span>
+        <span class="chips">${Object.entries(statutTxt).map(([k, l]) => `<button data-ch="${k}" ${lecture ? 'disabled' : ''} class="${st === k ? 'on' : ''}" title="${{ absent: 'Absent', dispense: 'Dispensé', non_rendu: 'Non rendu (compte 0)' }[k]}">${l}</button>`).join('')}</span>
         <button class="obs-btn" data-com="${e.id}" title="Commentaire">💬</button><span class="etat"></span>
         ${aCom || N.ouvertCom.has(e.id) ? `<input class="com" placeholder="Commentaire sur cette note" value="${esc(n ? n.commentaire || '' : '')}">` : ''}</div>`;
     }).join('');
     return `<div class="barre"><button class="b sec" id="s-retour">← Évaluations</button><strong>${esc(ev.titre)}</strong><span class="petit">${jourFr(ev.date_eval + 'T12:00:00')} · sur ${fmt(ev.bareme)} · coef. ${fmt(ev.coefficient)} · ${esc(per ? per.libelle : '')}${per && per.verrouillee ? ' 🔒 verrouillée' : ''}</span></div>
-      ${per && per.verrouillee ? '<div class="msg info">Période verrouillée : seule la direction peut encore modifier les notes.</div>' : ''}
+      ${per && per.verrouillee ? '<div class="msg info">Période verrouillée : seule la direction peut encore modifier les notes.</div>' : (!monEns() ? '<div class="msg info">Lecture seule : cette matière n’est pas la vôtre.</div>' : '')}
       <div id="n-barre">${barreStats(ev)}</div>
       <p class="petit">Tape la note (14,5). Entrée = élève suivant. <strong>Abs</strong> absent · <strong>Disp</strong> dispensé · <strong>NR</strong> non rendu (compte 0). Vide = effacer. Enregistrement automatique.</p>
       <div id="n-lignes">${lignes}</div>
@@ -212,7 +250,7 @@
     const pied = `<tfoot><tr><td>Moyenne de la classe</td>${ens.map(x => `<td class="c">${cl.get(x.id) ? fmt(cl.get(x.id).moyenne_classe) : '—'}</td>`).join('')}<td class="c">${g0 ? fmt(g0.moyenne_classe) : '—'}</td><td></td></tr>
       <tr><td>Plus basse – plus haute</td>${ens.map(x => `<td class="c">${cl.get(x.id) ? `${fmt(cl.get(x.id).minimum)} – ${fmt(cl.get(x.id).maximum)}` : '—'}</td>`).join('')}<td class="c">${g0 ? `${fmt(g0.minimum)} – ${fmt(g0.maximum)}` : '—'}</td><td></td></tr></tfoot>`;
     return `<div class="barre"><button class="b sec" id="r-csv">Exporter en CSV</button>
-      ${per ? `<button class="b sec" id="r-verrou">${per.verrouillee ? '🔓 Déverrouiller la période' : '🔒 Verrouiller la période'}</button>` : ''}
+      ${per && estAdm() ? `<button class="b sec" id="r-verrou">${per.verrouillee ? '🔓 Déverrouiller la période' : '🔒 Verrouiller la période'}</button>` : ''}
       <span class="petit">Notes ramenées sur 20 et pondérées par les coefficients. ${per ? '' : 'Toute l’année : toutes les notes comptées ensemble.'}</span></div>
       ${N.moyG.length ? '' : '<p class="doux">Aucune note pour cette période.</p>'}
       <div class="tablewrap"><table class="rel"><tr><th>Élève</th>${tete}<th class="c">Moyenne générale</th><th class="c">Rang</th></tr>${corps}${pied}</table></div>`;
@@ -241,6 +279,7 @@
   }
   function liensNotes() {
     document.querySelectorAll('[data-vue]').forEach(b => b.onclick = () => { N.vue = b.dataset.vue; N.evalId = null; recharger(chargerNotes); });
+    if (N.vue === 'reglages') return liensReglages();
     if (N.vue === 'releve') return liensReleve();
     liensSelecteurs(chargerNotes, true); lienFiche();
     const nouvelle = $('#e-nouvelle'); if (nouvelle) nouvelle.onclick = () => { N.creation = true; refaire(); };
@@ -352,16 +391,17 @@
     const per = periodeDe(N.periodeId), m = new Map(N.bilan.map(x => [x.eleve_id + x.competence_id, x]));
     const lignes = elevesClasse().map(e => `<tr><td><button class="lien" data-fiche="${e.id}">${esc(nomEleve(e))}</button></td>${cs.map(x => {
       const b = m.get(e.id + x.id), retenu = b ? b.niveau_retenu : null;
-      return `<td>${per ? `<select data-bil data-e="${e.id}" data-c="${x.id}" style="width:64px;padding:5px"><option value="">${b && b.niveau_propose ? '(' + b.niveau_propose + ')' : '—'}</option>${[1, 2, 3, 4].map(k => `<option value="${k}" ${b && b.modifie && retenu === k ? 'selected' : ''}>${k}</option>`).join('')}</select>` : ''} ${chipNiv(retenu)}${b && b.modifie ? ' <span class="petit" title="Corrigé à la main">✎</span>' : ''}</td>`; }).join('')}</tr>`).join('');
+      return `<td>${per && estPP() ? `<select data-bil data-e="${e.id}" data-c="${x.id}" style="width:64px;padding:5px"><option value="">${b && b.niveau_propose ? '(' + b.niveau_propose + ')' : '—'}</option>${[1, 2, 3, 4].map(k => `<option value="${k}" ${b && b.modifie && retenu === k ? 'selected' : ''}>${k}</option>`).join('')}</select>` : ''} ${chipNiv(retenu)}${b && b.modifie ? ' <span class="petit" title="Corrigé à la main">✎</span>' : ''}</td>`; }).join('')}</tr>`).join('');
     return `<p class="petit">Niveau proposé = moyenne arrondie des niveaux saisis dans la période (entre parenthèses). Le professeur principal ou la direction peut le corriger : ✎ = corrigé à la main.${per ? '' : ' Choisis une période pour corriger.'}</p>
       <div class="tablewrap"><table><tr><th>Élève</th>${cs.map(x => `<th title="${esc(x.libelle)}">${esc(x.code)}</th>`).join('')}</tr>${lignes}</table></div>`;
   }
   function vueCatalogue() {
     const lignes = N.competences.map(c => `<tr><td>Cycle ${c.cycle}</td><td><strong>${esc(c.code)}</strong></td><td>${esc(c.domaine)}</td><td>${esc(c.libelle)}</td>
       <td>${c.officiel ? `<span class="tag ok" title="${esc(c.source_ref || '')}">Officielle</span>${c.source_url ? ` <a class="petit" href="${esc(c.source_url)}" target="_blank" rel="noopener">source</a>` : ''}` : '<span class="tag" style="background:#fde2e0;color:#8a1a10">Ajout du collège · non officielle</span>'}</td>
-      <td>${c.actif ? '<span class="tag ok">Active</span>' : '<span class="tag">Désactivée</span>'}</td><td><button class="b sec" data-actif="${c.id}">${c.actif ? 'Désactiver' : 'Réactiver'}</button></td></tr>`).join('');
+      <td>${c.actif ? '<span class="tag ok">Active</span>' : '<span class="tag">Désactivée</span>'}</td><td>${estAdm() ? `<button class="b sec" data-actif="${c.id}">${c.actif ? 'Désactiver' : 'Réactiver'}</button>` : ''}</td></tr>`).join('');
     return `<p class="petit">Les 8 composantes du socle commun sont préchargées avec le texte officiel (décret n° 2015-372 du 31 mars 2015, BO n° 17 du 23 avril 2015), pour le cycle 3 (6e) et le cycle 4 (5e à 3e). Leur texte ne peut pas être modifié. L’administration peut désactiver une composante ou ajouter une compétence propre au collège, qui est alors signalée comme non officielle.</p>
-      <div class="barre"><select id="k-cycle">${opt(3, 'Cycle 3 (6e)')}${opt(4, 'Cycle 4 (5e à 3e)', true)}</select><input id="k-code" placeholder="Code (ex. C1)" style="width:110px"><input id="k-domaine" placeholder="Domaine" style="width:170px"><input id="k-lib" placeholder="Intitulé de la compétence" style="flex:1;min-width:200px"><button class="b" id="k-ajout">Ajouter</button></div>
+      ${estAdm() ? '' : '<p class="petit">Lecture seule : seule la direction modifie le catalogue.</p>'}
+      ${estAdm() ? `<div class="barre"><select id="k-cycle">${opt(3, 'Cycle 3 (6e)')}${opt(4, 'Cycle 4 (5e à 3e)', true)}</select><input id="k-code" placeholder="Code (ex. C1)" style="width:110px"><input id="k-domaine" placeholder="Domaine" style="width:170px"><input id="k-lib" placeholder="Intitulé de la compétence" style="flex:1;min-width:200px"><button class="b" id="k-ajout">Ajouter</button></div>` : ''}
       <div class="tablewrap"><table><tr><th>Cycle</th><th>Code</th><th>Domaine</th><th>Compétence</th><th>Source</th><th></th><th></th></tr>${lignes}</table></div>`;
   }
   function liensCompetences() {
