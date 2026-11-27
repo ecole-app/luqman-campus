@@ -17,7 +17,7 @@
     { cle: 'note_seuil_haut', valeur: 18 }, { cle: 'note_seuil_bas', valeur: 8 },
     { cle: 'niveaux_competences', valeur: ['Maîtrise insuffisante', 'Maîtrise fragile', 'Maîtrise satisfaisante', 'Très bonne maîtrise'] }] });
   [3, 4].forEach(cy => [['D1.1', 'Langue française'], ['D1.4', 'Langages des arts et du corps'], ['D2', 'Méthodes et outils pour apprendre'], ['D3', 'Formation de la personne et du citoyen']]
-    .forEach(([code, lib], i) => DB.competences.push({ id: uid(), cycle: cy, code, domaine: 'Socle', libelle: lib, ordre: i, actif: true })));
+    .forEach(([code, lib], i) => DB.competences.push({ id: uid(), cycle: cy, code, domaine: 'Socle', libelle: lib, ordre: i, actif: true, officiel: true, source_ref: 'Décret n° 2015-372 du 31-3-2015', source_url: 'https://www.education.gouv.fr/bo/15/Hebdo17/MENE1506516D.htm' })));
   const HOOKS = { competences: o => { if (o.actif === undefined) o.actif = true; return o; }, evaluations: o => { const p = DB.periodes.find(x => o.date_eval >= x.debut && o.date_eval <= x.fin); if (!p) throw new Error('Aucune période ne couvre cette date'); o.periode_id = p.id; return o; } };
   const HOOK_ = (t, o) => HOOKS[t] ? HOOKS[t](o) : o;
   window.__DB = DB; window.__appels_rpc = [];

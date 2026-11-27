@@ -75,3 +75,9 @@ Demande d'Ahmed : aller au bout de l'étape 2 pour ne pas y revenir. Tout fait s
 - Tests : `test:db` 130/130, `test:ecrans` 64/64. Cache du service worker : `lc-app-v5`.
 - **Pour installer** : appliquer `0005` sur Supabase (éditeur SQL, depuis un ordinateur), **puis relancer `acces_libre.sql` en entier**.
 - Restes : cacher les boutons selon le rôle (ETAPE-0B), notes visibles aux familles (phase 2), appréciations et bulletins (étape 4).
+
+## 2026-11-27 — Étape 3 : socle commun aux libellés officiels
+- Constat : mes libellés de D2 à D5 étaient des paraphrases et D1.2 omettait les langues régionales. Migration `0006` : textes exacts du décret n° 2015-372 du 31-3-2015 (BO n° 17 du 23-4-2015), colonnes `officiel`, `source_ref`, `source_url`. Un texte officiel ne se modifie ni ne se supprime (on peut le désactiver) ; une compétence ajoutée par le collège est toujours marquée « non officielle ».
+- Programmes (pour l'étape 7) : ils changent par niveau et par année — français/maths/langues cycle 4 : BO n° 10 du 5-3-2026 (5e en 2026, 4e en 2027, 3e en 2028) ; EPS et histoire-géo cycles 2-3 : BO n° 22 du 28-5-2026 (EPS 6e : rentrée 2027, ancien programme valable en 2026-27) ; autres matières cycle 4 : BO du 30-7-2020. Principe : table des programmes officiels versionnée (BO, NOR, date, lien), fiches rattachées à un élément officiel, alerte quand un programme est remplacé, validation par la direction.
+- Tests : `test:db` 133/133, `test:ecrans` 65/65. Cache `lc-app-v6`.
+- **Pour installer** : appliquer `0006` dans l'éditeur SQL (pas besoin de relancer `acces_libre.sql`).

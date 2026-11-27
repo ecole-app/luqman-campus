@@ -358,10 +358,11 @@
   }
   function vueCatalogue() {
     const lignes = N.competences.map(c => `<tr><td>Cycle ${c.cycle}</td><td><strong>${esc(c.code)}</strong></td><td>${esc(c.domaine)}</td><td>${esc(c.libelle)}</td>
+      <td>${c.officiel ? `<span class="tag ok" title="${esc(c.source_ref || '')}">Officielle</span>${c.source_url ? ` <a class="petit" href="${esc(c.source_url)}" target="_blank" rel="noopener">source</a>` : ''}` : '<span class="tag" style="background:#fde2e0;color:#8a1a10">Ajout du collège · non officielle</span>'}</td>
       <td>${c.actif ? '<span class="tag ok">Active</span>' : '<span class="tag">Désactivée</span>'}</td><td><button class="b sec" data-actif="${c.id}">${c.actif ? 'Désactiver' : 'Réactiver'}</button></td></tr>`).join('');
-    return `<p class="petit">Le socle commun est préchargé pour le cycle 3 (6e) et le cycle 4 (5e à 3e). L’administration peut ajouter des compétences propres au collège ou désactiver celles qu’elle n’utilise pas.</p>
+    return `<p class="petit">Les 8 composantes du socle commun sont préchargées avec le texte officiel (décret n° 2015-372 du 31 mars 2015, BO n° 17 du 23 avril 2015), pour le cycle 3 (6e) et le cycle 4 (5e à 3e). Leur texte ne peut pas être modifié. L’administration peut désactiver une composante ou ajouter une compétence propre au collège, qui est alors signalée comme non officielle.</p>
       <div class="barre"><select id="k-cycle">${opt(3, 'Cycle 3 (6e)')}${opt(4, 'Cycle 4 (5e à 3e)', true)}</select><input id="k-code" placeholder="Code (ex. C1)" style="width:110px"><input id="k-domaine" placeholder="Domaine" style="width:170px"><input id="k-lib" placeholder="Intitulé de la compétence" style="flex:1;min-width:200px"><button class="b" id="k-ajout">Ajouter</button></div>
-      <div class="tablewrap"><table><tr><th>Cycle</th><th>Code</th><th>Domaine</th><th>Compétence</th><th></th><th></th></tr>${lignes}</table></div>`;
+      <div class="tablewrap"><table><tr><th>Cycle</th><th>Code</th><th>Domaine</th><th>Compétence</th><th>Source</th><th></th><th></th></tr>${lignes}</table></div>`;
   }
   function liensCompetences() {
     document.querySelectorAll('[data-sub]').forEach(b => b.onclick = () => { N.sub = b.dataset.sub; N.evalId = null; S.message = null; recharger(chargerCompetences); });
