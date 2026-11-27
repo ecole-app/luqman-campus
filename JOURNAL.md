@@ -112,3 +112,7 @@ Demande d'Ahmed : aller au bout de l'étape 2 pour ne pas y revenir. Tout fait s
 - Tests : `test:db` 154/154, `test:ecrans` 107/107. Cache `lc-app-v9`, `bulletins.js?v=1`, `notes.js?v=5`.
 - **Pour installer** : appliquer `0010` dans l'éditeur SQL, puis relancer `acces_libre.sql` en entier.
 - Points pour le directeur ajoutés (10 à 16) dans `docs/A-VALIDER-AVEC-LE-DIRECTEUR.md`.
+
+## 2026-11-27 — Correctif : réglages illisibles en mode test
+- Trouvé au test réel de l'étape 4 : en mode test sans connexion, la table `parametres` n'était pas ouverte ; l'appli retombait sur ses valeurs par défaut (seuils des notes, mentions vides → mention impossible à choisir). `acces_libre.sql` ouvre maintenant `parametres` en lecture/écriture (retiré par `retirer_acces_libre.sql`). Liste de mentions de secours dans l'appli. Tests 156/156, écrans 107/107. Cache `lc-app-v10`, `bulletins.js?v=2`.
+- **Pour installer** : relancer `acces_libre.sql` en entier.
