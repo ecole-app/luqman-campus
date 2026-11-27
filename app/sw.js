@@ -1,8 +1,8 @@
 // Luqmân Campus — service worker : l'appli s'ouvre même sans réseau.
 // Les fichiers de l'appli sont pris sur le réseau en priorité (mises à jour immédiates), sinon dans le cache.
 // Les données (Supabase) ne passent jamais par ce cache : l'appli gère elle-même sa copie hors ligne.
-const CACHE = 'lc-app-v8';
-const FICHIERS = ['./', './index.html', './config.js', './vie-scolaire.js', './vie-scolaire-2.js', './notes.js', './manifest.webmanifest', './icon.svg', './icon-192.png',
+const CACHE = 'lc-app-v9';
+const FICHIERS = ['./', './index.html', './config.js', './vie-scolaire.js', './vie-scolaire-2.js', './notes.js', './bulletins.js', './manifest.webmanifest', './icon.svg', './icon-192.png',
   './vendor/supabase-2.119.2.js'];
 
 self.addEventListener('install', e => {

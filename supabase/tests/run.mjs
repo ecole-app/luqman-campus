@@ -21,6 +21,7 @@ await db.exec(readFileSync(new URL('../migrations/0006_socle_officiel.sql', impo
 await db.exec(readFileSync(new URL('../migrations/0007_droits_notes.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0008_notes_ameliorations.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0009_modeles_auteur_optionnel.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../migrations/0010_appreciations_bulletins.sql', import.meta.url), 'utf8'));
 
 const U = { gest:'00000000-0000-0000-0000-000000000001', dir:'00000000-0000-0000-0000-000000000002',
   prof:'00000000-0000-0000-0000-000000000003', eleve:'00000000-0000-0000-0000-000000000004',
@@ -550,6 +551,74 @@ await test('bibliothèque : on ne publie que ses propres évaluations ; on n’e
   const b = await as('prof2', `delete from modeles_evaluation where created_by <> '${U.prof2}' returning id`);
   return (!evMath || !a.ok) && (!b.ok || b.res.rows.length === 0); });
 
+// ---------- Étape 4 : appréciations et bulletins ----------
+const appr0 = (u, ens, per, lignes) => as(u, `select saisir_appreciations('${ens}', '${per}', '${JSON.stringify(lignes).replace(/'/g, "''")}'::jsonb) n`);
+const appr = appr0;
+await test('appréciation : le professeur saisit, modifie et efface celle de sa matière', async () => {
+  const a = await appr('prof', ensEps, T1, [{ eleve_id: sarah, texte: 'Bon trimestre, travail régulier.' }, { eleve_id: adam, texte: 'Des progrès.' }]);
+  const b = await appr('prof', ensEps, T1, [{ eleve_id: adam, texte: 'En net progrès.' }]);
+  const c = await as('prof', `select eleve_id, texte from appreciations where enseignement_id='${ensEps}' and periode_id='${T1}'`);
+  await appr('prof', ensEps, T1, [{ eleve_id: adam, texte: '  ' }]);
+  const d = await as('prof', `select count(*)::int n from appreciations where enseignement_id='${ensEps}' and periode_id='${T1}'`);
+  return a.ok && b.ok && c.res.rows.length === 2 && de(c.res.rows, adam).texte === 'En net progrès.' && d.res.rows[0].n === 1; });
+await test('appréciation : refusée sur la matière d’un collègue, pour un élève d’une autre classe, ou trop longue', async () => {
+  const a = await appr('prof', ensMath, T1, [{ eleve_id: sarah, texte: 'Pas ma matière' }]);
+  const b = await appr('prof', ensEps, T1, [{ eleve_id: lina, texte: 'Autre classe' }]);
+  const c = await appr('prof', ensEps, T1, [{ eleve_id: adam, texte: 'x'.repeat(401) }]);
+  return !a.ok && !b.ok && /pas dans la classe/.test(b.err) && !c.ok && /trop long/.test(c.err); });
+await test('appréciation : lue par le professeur et le prof principal ; ni par la vie scolaire, ni par un élève', async () => {
+  const p = await as('prof', `select * from appreciations`); const pp = await as('prof2', `select * from appreciations`);
+  const v = await as('vs2', `select * from appreciations`); const e = await as('eleve', `select * from appreciations`);
+  return p.res.rows.length === 1 && pp.res.rows.length === 1 && v.res.rows.length === 0 && (!e.ok || e.res.rows.length === 0); });
+await test('éléments du programme : saisis par le professeur, lus par tout le personnel', async () => {
+  const a = await as('prof', `select saisir_elements_programme('${ensEps}', '${T1}', 'Course de durée ; badminton')`);
+  const b = await as('vs2', `select texte from elements_programme where enseignement_id='${ensEps}'`);
+  const c = await as('prof', `select saisir_elements_programme('${ensMath}', '${T1}', 'Pas ma matière')`);
+  return a.ok && b.res.rows[0]?.texte === 'Course de durée ; badminton' && !c.ok; });
+await test('appréciation générale et mention : le prof principal seulement ; mention inconnue refusée', async () => {
+  const a = await as('prof2', `select saisir_appreciation_generale('${sarah}', '${T1}', 'Trimestre encourageant.', 'Compliments')`);
+  const b = await as('prof', `select saisir_appreciation_generale('${sarah}', '${T1}', 'Non', null)`);
+  const c = await as('prof2', `select saisir_appreciation_generale('${adam}', '${T1}', 'Bien', 'Super bravo')`);
+  const d = await as('prof2', `select texte, mention from appreciations_generales where eleve_id='${sarah}'`);
+  return a.ok && !b.ok && !c.ok && /Mention inconnue/.test(c.err) && d.res.rows[0].mention === 'Compliments'; });
+await test('bulletin : données complètes pour le prof principal (matières, moyennes, appréciations, absences, appréciation générale)', async () => {
+  const r = await as('prof2', `select donnees_bulletins('${cl5}', '${T1}') b`); const b = r.res?.rows?.[0]?.b;
+  const s = b && b.eleves.find(x => x.id === sarah);
+  return r.ok && b.classe.nom === '5e A' && b.periode.libelle && b.enseignements.length >= 2 && b.enseignements.find(x => x.id === ensEps).elements === 'Course de durée ; badminton'
+    && s.resultats[ensEps].appreciation === 'Bon trimestre, travail régulier.' && s.generale === 'Trimestre encourageant.' && s.mention === 'Compliments'
+    && typeof s.absences.demi_journees === 'number' && s.rang === 1 && s.absences.retards === 1 && b.etablissement.nom === 'Collège Luqmân'; });
+await test('bulletin : le rang disparaît quand le réglage est coupé', async () => {
+  await as('dir', `update parametres set valeur='false' where cle='bulletin_afficher_rang'`);
+  const r = await as('prof2', `select donnees_bulletins('${cl5}', '${T1}') b`);
+  await as('dir', `update parametres set valeur='true' where cle='bulletin_afficher_rang'`);
+  return r.res.rows[0].b.eleves.every(e => e.rang === null) && r.res.rows[0].b.afficher_rang === false; });
+await test('bulletin : refusé à un professeur qui n’est pas principal de la classe et à un élève', async () => {
+  const a = await as('prof', `select donnees_bulletins('${cl5}', '${T1}')`); const b = await as('eleve', `select donnees_bulletins('${cl5}', '${T1}')`);
+  return !a.ok && !b.ok; });
+await test('bulletin validé : saisies figées pour les professeurs, la direction peut encore corriger ; seul l’admin change le statut', async () => {
+  const x = await as('prof', `select changer_statut_bulletin('${cl5}', '${T1}', 'valide')`);
+  const v = await as('dir', `select changer_statut_bulletin('${cl5}', '${T1}', 'valide')`);
+  const a = await appr('prof', ensEps, T1, [{ eleve_id: sarah, texte: 'Changement tardif' }]);
+  const g = await as('prof2', `select saisir_appreciation_generale('${adam}', '${T1}', 'Tard', null)`);
+  const d = await appr('dir', ensEps, T1, [{ eleve_id: sarah, texte: 'Corrigé par la direction.' }]);
+  const s = await as('dir', `select statut, valide_le is not null v from bulletins_periode where classe_id='${cl5}' and periode_id='${T1}'`);
+  await as('dir', `select changer_statut_bulletin('${cl5}', '${T1}', 'ouvert')`);
+  const r = await appr('prof', ensEps, T1, [{ eleve_id: sarah, texte: 'Bon trimestre, travail régulier.' }]);
+  return !x.ok && v.ok && !a.ok && /Bulletin validé/.test(a.err) && !g.ok && d.ok && s.res.rows[0].statut === 'valide' && s.res.rows[0].v && r.ok; });
+await test('suivi du remplissage : compteurs par matière et appréciations générales', async () => {
+  const r = await as('dir', `select suivi_appreciations('${cl5}', '${T1}') s`); const s = r.res.rows[0].s;
+  const eps = s.matieres.find(m => m.enseignement_id === ensEps);
+  return s.eleves >= 2 && s.generales === 1 && eps.appreciations === 1 && eps.elements === true && s.statut === 'ouvert'; });
+await test('banque de phrases : phrases de départ visibles ; une phrase privée reste privée', async () => {
+  const a = await as('prof', `select count(*)::int n from banque_phrases`);
+  const b = await as('prof', `insert into banque_phrases(categorie, texte, partage) values ('Perso', 'Ma phrase', false) returning id`);
+  const c = await as('prof2', `select * from banque_phrases where texte='Ma phrase'`);
+  const d = await as('prof2', `delete from banque_phrases where texte='Ma phrase' returning id`);
+  return a.res.rows[0].n >= 20 && b.ok && c.res.rows.length === 0 && (!d.ok || d.res.rows.length === 0); });
+await test('appréciations et bulletins fermés aux visiteurs sans connexion (avant le mode test)', async () => {
+  const a = await as('anon', `select * from appreciations`); const b = await as('anon', `select donnees_bulletins('${cl5}', '${T1}')`);
+  return (!a.ok || a.res.rows.length === 0) && !b.ok; });
+
 // ---------- Visibilité des notes (réglage notes_visibles_tout_personnel) ----------
 await test('visibilité : un professeur ne lit que les notes de sa matière (EPS), pas celles de la matière d’un collègue', async () => {
   const e = await as('prof', `select distinct enseignement_id from evaluations`); const ids = e.res.rows.map(r => r.enseignement_id);
@@ -599,6 +668,11 @@ await test('accès libre : on peut publier et utiliser un modèle d’évaluatio
   const p = await as('anon', `select publier_modele('${e.id}', 'Essai libre', true) id`);
   const u = p.ok && await as('anon', `select utiliser_modele('${p.res.rows[0].id}', '${ensEps}', '2026-12-09') id`);
   return p.ok && u.ok; });
+await test('accès libre : appréciations, appréciation générale et bulletin utilisables sans connexion', async () => {
+  const a = await appr('anon', ensEps, T2, [{ eleve_id: sarah, texte: 'Mode test' }]);
+  const g = await as('anon', `select saisir_appreciation_generale('${sarah}', '${T2}', 'Mode test', null)`);
+  const b = await as('anon', `select donnees_bulletins('${cl5}', '${T2}') b`);
+  return a.ok && g.ok && b.ok && b.res.rows[0].b.eleves.length > 0; });
 await db.exec(lire('retirer_acces_libre.sql'));
 await test('après le retrait : plus de notes ni de moyennes sans connexion, et les droits par rôle reviennent', async () => {
   const a = await as('anon', 'select * from notes'); const b = await as('anon', `select * from moyennes_generales('${cl5}', null)`);

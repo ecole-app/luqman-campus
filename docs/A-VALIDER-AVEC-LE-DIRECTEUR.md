@@ -16,7 +16,15 @@ Chaque point indique ce qui est fait aujourd'hui et ce qu'il faut décider.
 ## Intégration
 9. **« Présences Luqmân »** (appel des professeurs, système du directeur) : il doit la mettre sur GitHub (public ou accès donné) et donner le lien. Puis décider de l'intégration (absences de professeurs → cours annulés / remplaçants). *Vérifier aussi qu'il a bien le rôle Write sur le dépôt (il teste en créant une branche).*
 
+## Appréciations et bulletins (étape 4)
+10. **Format du bulletin.** Calqué sur le bilan périodique du livret scolaire (arrêté du 31-12-2015) : éléments du programme travaillés, moyenne, appréciation, vie scolaire, appréciation générale. L'application nationale LSU concerne le public et le privé sous contrat ; en hors contrat, le contrôle porte sur l'acquisition du socle. *Décider : garder ce format ? ajouter un bilan de fin de cycle (6e, 3e) ?*
+11. **Mentions.** Liste actuelle : Éloges, Félicitations, Compliments, Encouragements, Avertissement travail / comportement / assiduité ; mention *proposée* selon les seuils (compliments ≥ 14, félicitations > 16 et toutes matières ≥ 10, éloges ≥ 18 et toutes matières ≥ 16, avertissement < 10). *Décider : liste et seuils du collège.*
+12. **Rang sur le bulletin.** Affiché aujourd'hui (réglage existant depuis l'étape 1). *Décider : l'afficher ou non.*
+13. **Validation.** La direction valide (les saisies des professeurs sont alors figées) puis publie. *Décider : qui valide, et à quel moment (avant ou après le conseil de classe) ?*
+14. **Longueur des appréciations.** 400 caractères maximum (éléments du programme : 600). *Décider.*
+15. **Propositions automatiques d'appréciations.** Aujourd'hui : règles fixes dans l'appli (moyenne, évolution, travaux non rendus, absences), sans IA externe, aucune donnée ne sort. Une vraie IA (ex. Gemini) enverrait des données d'élèves à un service tiers : *décider si on l'autorise (RGPD, information des familles) avant de la brancher.*
+16. **En-tête et signatures.** Nom et adresse exacts du collège, logo, mentions légales ; cases de signature (professeur principal, direction, responsables légaux). *Fournir les informations.*
+
 ## À compléter aux étapes suivantes
-- Appréciations et bulletins (étape 4) : modèles de phrases, qui valide, format officiel du bulletin.
 - Conseil de classe (étape 5) : qui anime, qui voit l'écran projeté.
 - Mise en service (étape 0b) : comptes, connexion sécurisée, retrait du mode test, conservation des données.

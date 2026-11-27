@@ -5,7 +5,7 @@
   const auj = new Date(); const j = auj.toISOString().slice(0, 10);
   const at = (h, m) => { const d = new Date(); d.setHours(h, m, 0, 0); return d.toISOString(); };
   const DB = { classes: [], eleves: [], matieres: [], enseignements: [], annees_scolaires: [], periodes: [], cours: [], appels: [], presences: [], observations: [], punitions: [],
-    coffre_telephone: [], corrections_presence: [], absences_prevues: [], seances_retenue: [], incidents: [], incident_eleves: [], passages_infirmerie: [], fermetures: [], groupes: [], groupe_eleves: [], modeles_evaluation: [] };
+    coffre_telephone: [], corrections_presence: [], absences_prevues: [], seances_retenue: [], incidents: [], incident_eleves: [], passages_infirmerie: [], fermetures: [], groupes: [], groupe_eleves: [], modeles_evaluation: [], appreciations: [], elements_programme: [], appreciations_generales: [], bulletins_periode: [], banque_phrases: [] };
   const an = { id: uid(), libelle: '2026-2027', active: true }; DB.annees_scolaires.push(an);
   DB.periodes.push({ id: uid(), annee_id: an.id, numero: 1, libelle: 'Trimestre 1', debut: '2026-09-01', fin: '2026-11-30' }, { id: uid(), annee_id: an.id, numero: 2, libelle: 'Trimestre 2', debut: '2026-12-01', fin: '2027-03-15' });
   ['5e A', '6e A'].forEach(n => DB.classes.push({ id: uid(), annee_id: an.id, niveau: n.slice(0, 2), nom: n }));
@@ -14,10 +14,11 @@
   DB.classes.forEach((c, ci) => noms.forEach((n, k) => DB.eleves.push({ id: uid(), nom: n, prenom: ['Adam', 'Lina', 'Amir', 'Sofia', 'Yanis', 'Sarah', 'Nour', 'Ilyes'][k], date_naissance: '2014-01-01', ine: null, classe_id: c.id, deleted_at: null })));
   DB.classes.forEach(c => DB.matieres.forEach(m => DB.enseignements.push({ id: uid(), classe_id: c.id, matiere_id: m.id, coefficient: 1, heures_hebdo: 3, professeur_id: null })));
   Object.assign(DB, { evaluations: [], notes: [], evaluation_competences: [], acquisitions: [], bilans_competences: [], competences: [], parametres: [
-    { cle: 'note_seuil_haut', valeur: 18 }, { cle: 'note_seuil_bas', valeur: 8 }, { cle: 'notes_visibles_tout_personnel', valeur: false }, { cle: 'note_non_rendu_compte_zero', valeur: true },
+    { cle: 'note_seuil_haut', valeur: 18 }, { cle: 'note_seuil_bas', valeur: 8 }, { cle: 'notes_visibles_tout_personnel', valeur: false }, { cle: 'appreciation_longueur_max', valeur: 400 }, { cle: 'elements_programme_longueur_max', valeur: 600 }, { cle: 'etablissement_nom', valeur: 'Collège Luqmân' }, { cle: 'etablissement_adresse', valeur: 'Saint-Étienne' }, { cle: 'bulletin_afficher_rang', valeur: true }, { cle: 'mentions_bulletin', valeur: ['Éloges', 'Félicitations', 'Compliments', 'Encouragements', 'Avertissement travail'] }, { cle: 'avis_seuil_avertissement', valeur: 10 }, { cle: 'avis_compliments', valeur: 14 }, { cle: 'avis_felicitations', valeur: 16 }, { cle: 'avis_felicitations_min_matiere', valeur: 10 }, { cle: 'avis_eloges', valeur: 18 }, { cle: 'avis_eloges_min_matiere', valeur: 16 }, { cle: 'note_non_rendu_compte_zero', valeur: true },
     { cle: 'niveaux_competences', valeur: ['Maîtrise insuffisante', 'Maîtrise fragile', 'Maîtrise satisfaisante', 'Très bonne maîtrise'] }] });
   [3, 4].forEach(cy => [['D1.1', 'Langue française'], ['D1.4', 'Langages des arts et du corps'], ['D2', 'Méthodes et outils pour apprendre'], ['D3', 'Formation de la personne et du citoyen']]
     .forEach(([code, lib], i) => DB.competences.push({ id: uid(), cycle: cy, code, domaine: 'Socle', libelle: lib, ordre: i, actif: true, officiel: true, source_ref: 'Décret n° 2015-372 du 31-3-2015', source_url: 'https://www.education.gouv.fr/bo/15/Hebdo17/MENE1506516D.htm' })));
+  DB.banque_phrases.push(...[['Très bien', 'Excellent trimestre : travail sérieux et résultats remarquables.'], ['Progrès', 'Des progrès nets ce trimestre.'], ['Difficultés', 'Des difficultés persistent.']].map(([categorie, texte]) => ({ id: uid(), categorie, texte, partage: true, created_by: null })));
   const HOOKS = { competences: o => { if (o.actif === undefined) o.actif = true; return o; }, evaluations: o => { const p = DB.periodes.find(x => o.date_eval >= x.debut && o.date_eval <= x.fin); if (!p) throw new Error('Aucune période ne couvre cette date'); o.periode_id = p.id; return o; } };
   const HOOK_ = (t, o) => HOOKS[t] ? HOOKS[t](o) : o;
   window.__DB = DB; window.__appels_rpc = [];
@@ -66,7 +67,7 @@
       const emb = T.map(r => embed(r, this.sel));
       const ok = emb.map((r, i) => this.f.every(f => f(r)) ? i : -1).filter(i => i >= 0);
       if (this.op === 'update') { ok.forEach(i => { Object.assign(T[i], this.vals); if (this.t === 'presences' && this.vals.statut) T[i].heure_evenement = this.vals.statut === 'present' ? null : now(); if (this.vals.statut === 'retard') T[i].minutes_retard = 15; }); return { data: null, error: null }; }
-      if (this.op === 'delete') { ok.sort((a, b) => b - a).forEach(i => T.splice(i, 1)); return { data: null, error: null }; }
+      if (this.op === 'delete') { const sup = ok.map(i => T[i]); ok.sort((a, b) => b - a).forEach(i => T.splice(i, 1)); return { data: sup, error: null }; }
       let d = ok.map(i => emb[i]);
       if (this.ord) { const [c, s] = this.ord; d.sort((a, b) => String(get(a, c) ?? '').localeCompare(String(get(b, c) ?? '')) * s); }
       if (this.lim) d = d.slice(0, this.lim);
@@ -131,6 +132,41 @@
       const m = DB.modeles_evaluation.find(x => x.id === p_modele); const id = crypto.randomUUID();
       DB.evaluations.push(HOOK_('evaluations', { id, enseignement_id: p_enseignement, titre: m.titre, date_eval: p_date, type: m.type, bareme: m.bareme, coefficient: m.coefficient, visible_familles: false }));
       return id; },
+    saisir_appreciations({ p_ens, p_periode, p_lignes }) {
+      const en = DB.enseignements.find(e => e.id === p_ens); const st = (DB.bulletins_periode.find(b => b.classe_id === en.classe_id && b.periode_id === p_periode) || {}).statut || 'ouvert';
+      const adm = !DB.__droits || DB.__droits.admin; if (st !== 'ouvert' && !adm) throw new Error('Bulletin validé ou période verrouillée : seule la direction peut encore modifier.');
+      p_lignes.forEach(l => { const t = String(l.texte || '').trim(); if (t.length > 400) throw new Error('Texte trop long : 400 caractères maximum (actuellement ' + t.length + ').');
+        const i = DB.appreciations.findIndex(a => a.eleve_id === l.eleve_id && a.enseignement_id === p_ens && a.periode_id === p_periode);
+        if (!t) { if (i >= 0) DB.appreciations.splice(i, 1); } else if (i >= 0) DB.appreciations[i].texte = t; else DB.appreciations.push({ id: uid(), eleve_id: l.eleve_id, enseignement_id: p_ens, periode_id: p_periode, texte: t }); });
+      return p_lignes.length; },
+    saisir_elements_programme({ p_ens, p_periode, p_texte }) {
+      const i = DB.elements_programme.findIndex(a => a.enseignement_id === p_ens && a.periode_id === p_periode); const t = String(p_texte || '').trim();
+      if (!t) { if (i >= 0) DB.elements_programme.splice(i, 1); } else if (i >= 0) DB.elements_programme[i].texte = t; else DB.elements_programme.push({ id: uid(), enseignement_id: p_ens, periode_id: p_periode, texte: t }); return null; },
+    saisir_appreciation_generale({ p_eleve, p_periode, p_texte, p_mention }) {
+      const i = DB.appreciations_generales.findIndex(a => a.eleve_id === p_eleve && a.periode_id === p_periode); const t = String(p_texte || '').trim() || null, m = p_mention || null;
+      if (!t && !m) { if (i >= 0) DB.appreciations_generales.splice(i, 1); } else if (i >= 0) Object.assign(DB.appreciations_generales[i], { texte: t, mention: m }); else DB.appreciations_generales.push({ id: uid(), eleve_id: p_eleve, periode_id: p_periode, texte: t, mention: m }); return null; },
+    changer_statut_bulletin({ p_classe, p_periode, p_statut }) {
+      if (DB.__droits && !DB.__droits.admin) throw new Error('Seule la direction valide ou publie les bulletins.');
+      const b = DB.bulletins_periode.find(x => x.classe_id === p_classe && x.periode_id === p_periode); if (b) b.statut = p_statut; else DB.bulletins_periode.push({ classe_id: p_classe, periode_id: p_periode, statut: p_statut }); return null; },
+    suivi_appreciations({ p_classe, p_periode }) {
+      const els = DB.eleves.filter(e => e.classe_id === p_classe && !e.deleted_at);
+      return { eleves: els.length, generales: DB.appreciations_generales.filter(a => a.periode_id === p_periode && els.some(e => e.id === a.eleve_id) && a.texte).length,
+        statut: (DB.bulletins_periode.find(b => b.classe_id === p_classe && b.periode_id === p_periode) || {}).statut || 'ouvert',
+        matieres: DB.enseignements.filter(en => en.classe_id === p_classe).map(en => ({ enseignement_id: en.id, matiere: DB.matieres.find(m => m.id === en.matiere_id).nom, professeur: null,
+          appreciations: DB.appreciations.filter(a => a.enseignement_id === en.id && a.periode_id === p_periode).length, elements: DB.elements_programme.some(x => x.enseignement_id === en.id && x.periode_id === p_periode) })) }; },
+    donnees_bulletins({ p_classe, p_periode }) {
+      if (DB.__droits && !DB.__droits.admin && !(DB.__droits.classes_pp || []).includes(p_classe)) throw new Error('Les bulletins sont réservés au professeur principal et à la direction.');
+      const cl = DB.classes.find(c => c.id === p_classe), per = DB.periodes.find(p => p.id === p_periode), mm = calcMoy(p_classe, p_periode);
+      const ens = DB.enseignements.filter(en => en.classe_id === p_classe).map(en => { const v = mm.filter(o => o.enseignement_id === en.id).map(o => o.moy);
+        return { id: en.id, matiere: DB.matieres.find(m => m.id === en.matiere_id).nom, coefficient: en.coefficient, professeur: null, elements: (DB.elements_programme.find(x => x.enseignement_id === en.id && x.periode_id === p_periode) || {}).texte || null,
+          moyenne_classe: v.length ? r2(v.reduce((a, b) => a + b, 0) / v.length) : null, min: v.length ? r2(Math.min(...v)) : null, max: v.length ? r2(Math.max(...v)) : null }; }).sort((a, b) => a.matiere.localeCompare(b.matiere));
+      const gen = RPC.moyennes_generales({ p_classe, p_periode });
+      const eleves = DB.eleves.filter(e => e.classe_id === p_classe && !e.deleted_at).sort((a, b) => (a.nom + a.prenom).localeCompare(b.nom + b.prenom)).map(e => { const g = gen.find(x => x.eleve_id === e.id) || {}, ag = DB.appreciations_generales.find(a => a.eleve_id === e.id && a.periode_id === p_periode) || {};
+        const res = {}; ens.forEach(en => { const o = mm.find(x => x.eleve_id === e.id && x.enseignement_id === en.id); res[en.id] = { moyenne: o ? r2(o.moy) : null, nb: o ? o.nb : 0, appreciation: (DB.appreciations.find(a => a.eleve_id === e.id && a.enseignement_id === en.id && a.periode_id === p_periode) || {}).texte || null }; });
+        return { id: e.id, nom: e.nom, prenom: e.prenom, date_naissance: e.date_naissance, moyenne: g.moyenne ?? null, rang: g.rang ?? null, resultats: res, absences: { demi_journees: 1, non_justifiees: 0, retards: 2 }, generale: ag.texte || null, mention: ag.mention || null, competences: [] }; });
+      const gm = gen.map(x => x.moyenne);
+      return { etablissement: { nom: 'Collège Luqmân', adresse: 'Saint-Étienne' }, classe: { id: cl.id, nom: cl.nom, niveau: cl.niveau, prof_principal: null }, periode: { id: per.id, libelle: per.libelle, debut: per.debut, fin: per.fin, annee: '2026-2027' },
+        statut: (DB.bulletins_periode.find(b => b.classe_id === p_classe && b.periode_id === p_periode) || {}).statut || 'ouvert', afficher_rang: true, moyenne_classe: gm.length ? r2(gm.reduce((a, b) => a + b, 0) / gm.length) : null, enseignements: ens, eleves }; },
     mes_droits_notes() { return DB.__droits || { admin: true, classes_pp: [], enseignements: [] }; },
     saisir_notes({ p_eval, p_lignes }) {
       const ev = DB.evaluations.find(e => e.id === p_eval); const per = DB.periodes.find(p => p.id === ev.periode_id);
