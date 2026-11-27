@@ -721,6 +721,9 @@
     LOAD.fiche = async () => { await baseFiche.load(); try { await chargerGraphiquesEleve(); } catch { G.pts = []; } };
   }
 
+  // Outils partagés avec l'étape 4 (bulletins.js)
+  window.LCVS.notesOutils = { N, chargerBase, pastille: v => pastille(v), fmt, opt, num, aujourdhui, nomClasse, estAdm, estReseau };
+
   // ---------- Branchement ----------
   insererOnglet('notes', 'Notes', 'fiche');
   insererOnglet('competences', 'Compétences', 'notes');

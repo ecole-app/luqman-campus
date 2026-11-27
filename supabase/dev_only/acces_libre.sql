@@ -78,3 +78,7 @@ grant execute on function public.mes_droits_notes() to anon;
 
 grant select, insert, update, delete on public.modeles_evaluation to anon;
 grant execute on function public.historique_notes(uuid), public.copier_evaluation(uuid, uuid, date), public.publier_modele(uuid, text, boolean), public.utiliser_modele(uuid, uuid, date) to anon;
+
+-- ---- Étape 4 : appréciations et bulletins ----
+grant select, insert, update, delete on public.appreciations, public.elements_programme, public.appreciations_generales, public.bulletins_periode, public.banque_phrases to anon;
+grant execute on function public.saisir_appreciations(uuid, uuid, jsonb), public.saisir_elements_programme(uuid, uuid, text), public.saisir_appreciation_generale(uuid, uuid, text, text), public.changer_statut_bulletin(uuid, uuid, text), public.suivi_appreciations(uuid, uuid), public.donnees_bulletins(uuid, uuid) to anon;

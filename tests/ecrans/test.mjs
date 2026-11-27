@@ -35,7 +35,7 @@ const onglet = async k => { await clic(`#nav [data-k="${k}"]`); await w(300); };
 await page.goto(BASE, { waitUntil: 'networkidle0' });
 await w(500);
 const onglets = await page.$$eval('#nav button', b => b.map(x => x.dataset.k));
-ok('tous les onglets sont là', ['appel', 'suivi', 'fiche', 'pun', 'incidents', 'tel', 'infirmerie', 'tdb', 'eleves', 'classes', 'groupes', 'calendrier', 'notes', 'competences'].every(k => onglets.includes(k)), onglets.join(','));
+ok('tous les onglets sont là', ['appel', 'suivi', 'fiche', 'pun', 'incidents', 'tel', 'infirmerie', 'tdb', 'eleves', 'classes', 'groupes', 'calendrier', 'notes', 'competences', 'appreciations', 'bulletins'].every(k => onglets.includes(k)), onglets.join(','));
 
 // --- Appel en ligne ---
 await clic('#v-fictifs'); await w(300);
@@ -84,7 +84,7 @@ const apres = await page.evaluate(id => ({ file: JSON.parse(localStorage.getItem
 ok('retour du réseau : tout est envoyé (2 saisies + validation)', apres.file === 0 && apres.abs.length === 2 && apres.abs.every(x => x.endsWith('*')) && apres.valide, JSON.stringify(apres));
 
 // --- Ouverture de l'appli sans réseau (copie gardée sur l'appareil) ---
-await page.evaluate(async m => { const c = await caches.open('lc-app-v8'); await c.put('http://localhost:8765/app/vendor/supabase-2.119.2.js', new Response(m, { headers: { 'Content-Type': 'application/javascript' } })); }, MOCK);
+await page.evaluate(async m => { const c = await caches.open('lc-app-v9'); await c.put('http://localhost:8765/app/vendor/supabase-2.119.2.js', new Response(m, { headers: { 'Content-Type': 'application/javascript' } })); }, MOCK);
 await page.setOfflineMode(true);
 const dbAvant = await page.evaluate(() => JSON.stringify(__DB));
 await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {}); await w(1500);
@@ -288,6 +288,71 @@ ok('hors ligne à froid : l’onglet Notes s’ouvre avec les évaluations de la
 await page.setOfflineMode(false);
 await page.evaluate(o => { __DB.evaluations.splice(o.nb); __DB.modeles_evaluation.length = 0; Object.assign(__LC.N, { classeId: o.c, ensId: o.e, periodeId: o.p, pret: false, vue: 'evals', evalId: null }); }, orig);
 await onglet('appel'); await onglet('notes'); await w(600);
+
+// --- Étape 4 : appréciations et bulletins ---
+const ctx4 = await page.evaluate(() => { const ev = __DB.evaluations.find(e => __DB.notes.some(n => n.evaluation_id === e.id && n.valeur === 19)); const en = __DB.enseignements.find(x => x.id === ev.enseignement_id);
+  Object.assign(__LC.B, { classeId: en.classe_id, ensId: en.id, periodeId: ev.periode_id, sub: 'matiere' }); return { ens: en.id, classe: en.classe_id, per: ev.periode_id, top: __DB.notes.find(n => n.valeur === 19).eleve_id, nb: __DB.eleves.filter(e => e.classe_id === en.classe_id).length }; });
+ok('étape 4 : onglets Appréciations et Bulletins présents', await page.evaluate(() => !!document.querySelector('#nav [data-k="appreciations"]') && !!document.querySelector('#nav [data-k="bulletins"]')));
+await onglet('appreciations'); await w(700);
+ok('appréciations : une ligne par élève, avec moyenne et zone de texte', await page.evaluate(n => document.querySelectorAll('#a-lignes [data-appr]').length === n && !!document.querySelector('#a-elem') && document.querySelectorAll('#a-lignes .note.haut').length >= 1, ctx4.nb));
+const tape = async (sel, txt) => { await page.$eval(sel, (ta, t) => { ta.value = t; ta.dispatchEvent(new Event('input')); ta.dispatchEvent(new Event('change')); }, txt); await w(400); };
+await tape(`[data-appr="${ctx4.top}"]`, 'Très bon travail, participation active.');
+ok('appréciation enregistrée automatiquement, compteur affiché', await page.evaluate(id => __DB.appreciations.some(a => a.eleve_id === id && a.texte === 'Très bon travail, participation active.') && /39\/400/.test(document.querySelector(`[data-appr="${id}"]`).parentElement.innerText), ctx4.top));
+const autre = await page.evaluate((c, top) => __DB.eleves.find(e => e.classe_id === c && e.id !== top).id, ctx4.classe, ctx4.top);
+await tape(`[data-appr="${autre}"]`, 'x'.repeat(420));
+ok('appréciation trop longue : refusée avec un message, compteur en rouge', await page.evaluate(id => { const p = document.querySelector(`[data-appr="${id}"]`).parentElement; return /Trop long/.test(p.innerText) && !!p.querySelector('.trop') && !__DB.appreciations.some(a => a.eleve_id === id); }, autre));
+await tape(`[data-appr="${autre}"]`, '');
+await page.$eval(`[data-prop="${ctx4.top}"]`, b => b.click()); await w(400);
+ok('💡 Proposer : brouillon adapté à la moyenne (≥ 16 : excellent), ajouté au texte existant', await page.evaluate(id => { const a = __DB.appreciations.find(x => x.eleve_id === id).texte; return /^Très bon travail, participation active\. /.test(a) && /Excellent|Très bons résultats|remarquable/.test(a); }, ctx4.top));
+await clic('#a-prop-tous'); await w(600);
+ok('💡 Proposer pour les cases vides : toutes les lignes reçoivent un brouillon', await page.evaluate(n => __DB.appreciations.length === n && /brouillons? d’appréciation proposés?/.test(document.querySelector('#vue').innerText), ctx4.nb));
+await page.$eval('#a-elem', ta => { ta.value = 'Course de durée ; badminton'; ta.dispatchEvent(new Event('change')); }); await w(400);
+ok('éléments du programme travaillés enregistrés', await page.evaluate(() => __DB.elements_programme.length === 1 && __DB.elements_programme[0].texte === 'Course de durée ; badminton'));
+await page.$eval(`[data-ouvphr="${autre}"]`, b => b.click()); await w(300);
+await page.$$eval(`[data-phr][data-pour="${autre}"]`, bs => bs.find(b => /Excellent trimestre/.test(b.textContent)).click()); await w(400);
+ok('📋 Phrases : une phrase de la banque s’ajoute à l’appréciation', await page.evaluate(id => / Excellent trimestre : travail sérieux et résultats remarquables\.$/.test(__DB.appreciations.find(a => a.eleve_id === id).texte), autre));
+// appréciation générale
+await page.$$eval('[data-asub="generale"]', b => b[0].click()); await w(800);
+ok('appréciation générale : une carte par élève avec moyenne, absences et appréciations des matières', await page.evaluate(n => document.querySelectorAll('[data-gen]').length === n && /demi-journée/.test(document.querySelector('#vue').innerText) && /Voir les appréciations des matières/.test(document.querySelector('#vue').innerText), ctx4.nb));
+await tape(`[data-gen="${ctx4.top}"]`, 'Excellent trimestre.');
+await page.$eval(`[data-mention="${ctx4.top}"]`, s => { s.value = 'Compliments'; s.dispatchEvent(new Event('change')); }); await w(400);
+ok('appréciation générale et mention enregistrées', await page.evaluate(id => { const a = __DB.appreciations_generales.find(x => x.eleve_id === id); return a && a.texte === 'Excellent trimestre.' && a.mention === 'Compliments'; }, ctx4.top));
+await page.$eval(`[data-propg="${autre}"]`, b => b.click()); await w(400);
+ok('💡 Proposer (générale) : brouillon rédigé à partir de la moyenne générale', await page.evaluate(id => (__DB.appreciations_generales.find(x => x.eleve_id === id) || {}).texte?.length > 20, autre));
+// banque de phrases
+await page.$$eval('[data-asub="phrases"]', b => b[0].click()); await w(500);
+await page.type('#ph-cat', 'Perso'); await page.type('#ph-txt', 'Bravo pour la régularité.'); await clic('#ph-ajout'); await w(400);
+ok('banque de phrases : ajout', await page.evaluate(() => __DB.banque_phrases.some(p => p.texte === 'Bravo pour la régularité.')) && /Bravo pour la régularité/.test(await texte()));
+// bulletins : suivi, validation, aperçu, impression
+await onglet('bulletins'); await w(700);
+ok('bulletins : suivi du remplissage par matière', await page.evaluate(n => /Appréciations des matières/.test(document.querySelector('#vue').innerText) && new RegExp(`${n}/${n}`).test(document.querySelector('#vue').innerText) && /manquants/.test(document.querySelector('#vue').innerText), ctx4.nb));
+await page.$$eval('[data-bsub="apercu"]', b => b[0].click()); await w(800);
+ok('aperçu : bulletin complet (en-tête, élève, matières, éléments du programme, vie scolaire, appréciation générale, PROVISOIRE)', await page.evaluate(() => { const b = document.querySelector('#b-rendu .bulletin'); const t = b ? b.innerText : '';
+  return !!b && /Collège Luqmân/.test(t) && /Bilan périodique/.test(t) && b.querySelectorAll('tbody tr').length === __DB.enseignements.filter(e => e.classe_id === __LC.B.classeId).length && /Course de durée ; badminton/.test(t) && /Demi-journées d’absence/.test(t) && /PROVISOIRE/.test(t); }));
+await page.$eval('#b-eleve', (s, id) => { s.value = id; s.dispatchEvent(new Event('change')); }, ctx4.top); await w(300);
+ok('aperçu : appréciation générale et mention de l’élève affichées', await page.evaluate(() => /Excellent trimestre\./.test(document.querySelector('#b-rendu').innerText) && /Compliments/i.test(document.querySelector('#b-rendu .mention').textContent)));
+await page.screenshot({ path: CAP('8-bulletin.png'), fullPage: true });
+await page.evaluate(() => { window.__impressions = 0; window.print = () => { window.__impressions++; window.__pages = document.querySelectorAll('#lc-impression .bulletin').length; }; });
+await clic('#b-imp1'); await w(200);
+const p1 = await page.evaluate(() => ({ n: window.__impressions, p: window.__pages }));
+await clic('#b-impc'); await w(200);
+const pc = await page.evaluate(() => ({ n: window.__impressions, p: window.__pages }));
+ok('impression : un bulletin, puis toute la classe (une page par élève)', p1.n === 1 && p1.p === 1 && pc.n === 2 && pc.p === ctx4.nb, JSON.stringify([p1, pc]));
+await page.$$eval('[data-bsub="suivi"]', b => b[0].click()); await w(500);
+await clic('[data-statut="valide"]'); await w(500);
+ok('validation des bulletins par la direction', await page.evaluate(() => __DB.bulletins_periode[0]?.statut === 'valide' && /Validé/.test(document.querySelector('#vue').innerText)));
+await page.evaluate(e => { __DB.__droits = { admin: false, classes_pp: [], enseignements: [e] }; __LC.N.pret = false; __LC.B.sub = 'matiere'; }, ctx4.ens);
+await onglet('appreciations'); await w(700);
+ok('bulletin validé : saisies figées pour le professeur (zones grisées, message)', await page.evaluate(() => [...document.querySelectorAll('[data-appr]')].every(t => t.disabled) && /saisies sont figées/.test(document.querySelector('#vue').innerText) && !document.querySelector('#a-prop-tous')));
+await onglet('bulletins'); await w(500);
+ok('rôle prof : ni validation, ni réglages, ni aperçu des bulletins de la classe', await page.evaluate(() => !document.querySelector('[data-statut]') && !document.querySelector('[data-bsub="reglages"]')));
+await page.evaluate(() => { __DB.__droits = null; __LC.N.pret = false; });
+await onglet('appel'); await onglet('bulletins'); await w(600);
+await page.$$eval('[data-bsub="reglages"]', b => b[0].click()); await w(500);
+await page.$eval('#g-nom', i => { i.value = 'Collège Luqmân — test'; }); await clic('#g-enreg'); await w(500);
+ok('réglages des bulletins enregistrés (en-tête)', await page.evaluate(() => __DB.parametres.find(p => p.cle === 'etablissement_nom').valeur === 'Collège Luqmân — test'));
+await page.evaluate(() => { __DB.bulletins_periode.length = 0; __LC.B.bsub = 'suivi'; });
+await onglet('appel');
 
 // --- Réglages (direction) ---
 await onglet('notes'); await w(300);

@@ -104,3 +104,11 @@ Demande d'Ahmed : aller au bout de l'étape 2 pour ne pas y revenir. Tout fait s
 
 ## 2026-11-27 — Points à valider avec le directeur regroupés
 - Décision d'Ahmed : tout ce qui demande l'avis du directeur est gardé pour la fin. Liste dans `docs/A-VALIDER-AVEC-LE-DIRECTEUR.md` (9 points à ce jour), à compléter à chaque étape.
+
+## 2026-11-27 — Étape 4 : appréciations et bulletins
+- Migration `0010` : `appreciations` (élève × matière × période), `elements_programme` (matière × période), `appreciations_generales` (+ mention), `bulletins_periode` (ouvert → validé → publié), `banque_phrases` (24 phrases de départ). Règles serveur : bulletin validé ou période verrouillée = seule la direction modifie ; longueur maximale ; élève de la classe ; mention dans la liste réglée. Droits : appréciation lue par qui voit les notes de la matière, écrite par son professeur ; générale et mention par le professeur principal ou la direction. Fonctions `saisir_appreciations`, `saisir_elements_programme`, `saisir_appreciation_generale`, `changer_statut_bulletin`, `suivi_appreciations`, `donnees_bulletins` (tout le bulletin d'une classe en un appel : moyennes, rang si réglé, appréciations, demi-journées d'absence et retards de la période, bilan des compétences).
+- Écrans (`app/bulletins.js`) : onglet **Appréciations** (par matière avec moyenne et évolution, enregistrement automatique, compteur, 💡 proposition par règles fixes, 📋 phrases, éléments du programme ; appréciation générale + mention proposée selon les seuils ; banque de phrases) et onglet **Bulletins** (suivi du remplissage, validation/publication, aperçu, impression d'un élève ou de toute la classe — une page A4 par élève, PDF via « Enregistrer au format PDF », réglages : en-tête, longueurs, rang, mentions, seuils). Appréciations gardées sur l'appareil si le réseau coupe.
+- Format calqué sur le bilan périodique du livret scolaire (arrêté du 31-12-2015). Le réglage `bulletin_afficher_rang` existait depuis l'étape 1 (vrai).
+- Tests : `test:db` 154/154, `test:ecrans` 107/107. Cache `lc-app-v9`, `bulletins.js?v=1`, `notes.js?v=5`.
+- **Pour installer** : appliquer `0010` dans l'éditeur SQL, puis relancer `acces_libre.sql` en entier.
+- Points pour le directeur ajoutés (10 à 16) dans `docs/A-VALIDER-AVEC-LE-DIRECTEUR.md`.
