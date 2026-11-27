@@ -17,6 +17,7 @@ await db.exec(readFileSync(new URL('../migrations/0002_donnees_etablissement.sql
 await db.exec(readFileSync(new URL('../migrations/0003_vie_scolaire.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0004_vie_scolaire_complements.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0005_notes_competences.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../migrations/0006_socle_officiel.sql', import.meta.url), 'utf8'));
 
 const U = { gest:'00000000-0000-0000-0000-000000000001', dir:'00000000-0000-0000-0000-000000000002',
   prof:'00000000-0000-0000-0000-000000000003', eleve:'00000000-0000-0000-0000-000000000004',
@@ -494,6 +495,25 @@ await test('un élève ne lit pas le bilan de compétences', async () => {
 const lire = f => readFileSync(new URL('../dev_only/' + f, import.meta.url), 'utf8');
 await db.exec(`grant usage on schema public to anon`);   // état par défaut de Supabase
 await test('avant l’accès libre, un visiteur ne voit aucun élève', async () => { const r = await as('anon', 'select * from eleves'); return !r.ok || r.res.rows.length === 0; });
+
+// ---------- Socle commun : libellés officiels et protection ----------
+await test('socle : 8 composantes officielles par cycle, avec libellés exacts du décret 2015-372 et source', async () => {
+  const r = await as('dir', `select cycle, code, libelle, domaine, officiel, source_ref from competences where officiel order by cycle, ordre`);
+  const l3 = r.res.rows.filter(x => x.cycle === 3), l4 = r.res.rows.filter(x => x.cycle === 4);
+  const att = ['Comprendre, s\u2019exprimer en utilisant la langue française à l\u2019oral et à l\u2019écrit', 'Comprendre, s\u2019exprimer en utilisant une langue étrangère et, le cas échéant, une langue régionale',
+    'Comprendre, s\u2019exprimer en utilisant les langages mathématiques, scientifiques et informatiques', 'Comprendre, s\u2019exprimer en utilisant les langages des arts et du corps',
+    'Les méthodes et outils pour apprendre', 'La formation de la personne et du citoyen', 'Les systèmes naturels et les systèmes techniques', 'Les représentations du monde et l\u2019activité humaine'];
+  const n = s => s.replace(/'/g, '\u2019');
+  return l3.length === 8 && l4.length === 8 && [l3, l4].every(l => l.every((x, i) => n(x.libelle) === att[i] && /2015-372/.test(x.source_ref))); });
+await test('socle : une compétence officielle ne se modifie ni ne se supprime ; on peut la désactiver', async () => {
+  const a = await as('dir', `update competences set libelle='Autre texte' where code='D2' and cycle=4 returning id`);
+  const b = await as('dir', `delete from competences where code='D2' and cycle=4 returning id`);
+  const c = await as('dir', `update competences set actif=false where code='D2' and cycle=4 returning id`);
+  await as('dir', `update competences set actif=true where code='D2' and cycle=4`);
+  return !a.ok && !b.ok && c.ok && c.res.rows.length === 1; });
+await test('socle : une compétence ajoutée par le collège n’est jamais « officielle »', async () => {
+  const r = await as('dir', `insert into competences(cycle, code, domaine, libelle, officiel, source_ref) values (4, 'LOC1', 'Local', 'Compétence du collège', true, 'faux') returning officiel, source_ref`);
+  return r.ok && r.res.rows[0].officiel === false && r.res.rows[0].source_ref === null; });
 
 // ---------- Visibilité des notes (réglage notes_visibles_tout_personnel) ----------
 await test('visibilité : un professeur ne lit que les notes de sa matière (EPS), pas celles de la matière d’un collègue', async () => {
