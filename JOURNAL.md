@@ -116,3 +116,8 @@ Demande d'Ahmed : aller au bout de l'étape 2 pour ne pas y revenir. Tout fait s
 ## 2026-11-27 — Correctif : réglages illisibles en mode test
 - Trouvé au test réel de l'étape 4 : en mode test sans connexion, la table `parametres` n'était pas ouverte ; l'appli retombait sur ses valeurs par défaut (seuils des notes, mentions vides → mention impossible à choisir). `acces_libre.sql` ouvre maintenant `parametres` en lecture/écriture (retiré par `retirer_acces_libre.sql`). Liste de mentions de secours dans l'appli. Tests 156/156, écrans 107/107. Cache `lc-app-v10`, `bulletins.js?v=2`.
 - **Pour installer** : relancer `acces_libre.sql` en entier.
+
+## 2026-11-27 — Banque de phrases : correction par les professeurs
+- Chaque professeur peut maintenant **corriger** (✏️) ses phrases et les phrases de départ, plus seulement la direction. « Retirer » reste limité à ses propres phrases (direction : toutes). Migration `0011_phrases_correction_profs.sql` (politiques insert/update/delete séparées, réservées au personnel).
+- Tests : `test:db` 157/157, `test:ecrans` 108/108. Cache `lc-app-v11`, `bulletins.js?v=3`.
+- **Pour installer** : appliquer `0011` dans l'éditeur SQL, puis relancer `acces_libre.sql` en entier (inchangé, mais règle habituelle).

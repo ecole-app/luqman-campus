@@ -22,6 +22,7 @@ await db.exec(readFileSync(new URL('../migrations/0007_droits_notes.sql', import
 await db.exec(readFileSync(new URL('../migrations/0008_notes_ameliorations.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0009_modeles_auteur_optionnel.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0010_appreciations_bulletins.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../migrations/0011_phrases_correction_profs.sql', import.meta.url), 'utf8'));
 
 const U = { gest:'00000000-0000-0000-0000-000000000001', dir:'00000000-0000-0000-0000-000000000002',
   prof:'00000000-0000-0000-0000-000000000003', eleve:'00000000-0000-0000-0000-000000000004',
@@ -615,6 +616,18 @@ await test('banque de phrases : phrases de départ visibles ; une phrase privée
   const c = await as('prof2', `select * from banque_phrases where texte='Ma phrase'`);
   const d = await as('prof2', `delete from banque_phrases where texte='Ma phrase' returning id`);
   return a.res.rows[0].n >= 20 && b.ok && c.res.rows.length === 0 && (!d.ok || d.res.rows.length === 0); });
+await test('banque de phrases : un professeur corrige une phrase de départ et la sienne, pas celle d’un collègue ; seule la sienne est retirable', async () => {
+  const dep = await as('prof', `update banque_phrases set texte = texte || ' (corrigée)' where created_by is null and categorie = (select min(categorie) from banque_phrases where created_by is null) returning id`);
+  const mine = await as('prof', `insert into banque_phrases(categorie, texte, partage) values ('Perso', 'Phrase du prof', true) returning id`);
+  const ok1 = await as('prof', `update banque_phrases set texte = 'Phrase du prof corrigée' where texte = 'Phrase du prof' returning id`);
+  const autre = await as('prof2', `update banque_phrases set texte = 'Piratée' where texte = 'Phrase du prof corrigée' returning id`);
+  const supAutre = await as('prof2', `delete from banque_phrases where texte = 'Phrase du prof corrigée' returning id`);
+  const depSup = await as('prof', `delete from banque_phrases where created_by is null returning id`);
+  const mineSup = await as('prof', `delete from banque_phrases where texte = 'Phrase du prof corrigée' returning id`);
+  const dirDep = await as('dir', `update banque_phrases set texte = texte where created_by is null returning id`);
+  return dep.ok && dep.res.rows.length >= 1 && mine.ok && ok1.ok && ok1.res.rows.length === 1
+    && (!autre.ok || autre.res.rows.length === 0) && (!supAutre.ok || supAutre.res.rows.length === 0)
+    && (!depSup.ok || depSup.res.rows.length === 0) && mineSup.ok && mineSup.res.rows.length === 1 && dirDep.ok && dirDep.res.rows.length >= 1; });
 await test('appréciations et bulletins fermés aux visiteurs sans connexion (avant le mode test)', async () => {
   const a = await as('anon', `select * from appreciations`); const b = await as('anon', `select donnees_bulletins('${cl5}', '${T1}')`);
   return (!a.ok || a.res.rows.length === 0) && !b.ok; });

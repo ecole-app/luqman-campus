@@ -9,7 +9,7 @@
   const O = window.LCVS.notesOutils;
   const N = O.N, { fmt, opt, aujourdhui, nomClasse } = O;
   const B = { sub: 'matiere', bsub: 'suivi', classeId: '', ensId: '', periodeId: '', statut: 'ouvert', appr: {}, moy: {}, moyPrev: {}, nr: {}, nbNotes: {},
-    elements: '', data: null, prev: null, suivi: null, phrases: [], apercu: '', ouvertPhrases: null, filtrePhr: '', confirmer: null, maxAppr: 400, maxElem: 600, mentions: [], avis: {} };
+    elements: '', data: null, prev: null, suivi: null, phrases: [], apercu: '', ouvertPhrases: null, filtrePhr: '', confirmer: null, modifPhr: null, uid: null, maxAppr: 400, maxElem: 600, mentions: [], avis: {} };
   window.__LC.B = B;
 
   const css = document.createElement('style');
@@ -158,6 +158,7 @@
     if (B.sub === 'matiere') return chargerMatiere();
     if (B.sub === 'generale') return chargerDonnees();
     const r = await sb.from('banque_phrases').select('*').order('categorie').order('texte'); B.phrases = r.data || [];
+    try { const u = await sb.auth.getUser(); B.uid = (u && u.data && u.data.user && u.data.user.id) || null; } catch (e) { B.uid = null; }
   }
   async function chargerMatiere() {
     B.appr = {}; B.moy = {}; B.moyPrev = {}; B.nr = {}; B.nbNotes = {}; B.elements = '';
@@ -270,9 +271,15 @@
   }
   function vuePhrases() {
     const cats = [...new Set(B.phrases.map(p => p.categorie))].sort((a, b) => a.localeCompare(b, 'fr'));
-    const liste = cats.map(c => `<h3>${esc(c)}</h3>${B.phrases.filter(p => p.categorie === c).map(p => `<div class="barre" style="justify-content:space-between"><span>${esc(p.texte)}${p.partage ? '' : ' <span class="tag">Privée</span>'}</span>
-      ${estAdm() || p.created_by ? `<button class="b danger" data-delphr="${p.id}">${B.confirmer === p.id ? 'Confirmer' : 'Retirer'}</button>` : ''}</div>`).join('')}`).join('');
-    return `<p class="petit">Phrases réutilisables dans toutes les appréciations (bouton 📋). Ajoute les tiennes ; coche « privée » pour les garder pour toi.</p>
+    const peutCorriger = p => estAdm() || !p.created_by || p.created_by === B.uid;
+    const peutRetirer = p => estAdm() || (!!p.created_by && p.created_by === B.uid);
+    const ligne = p => B.modifPhr === p.id
+      ? `<div class="barre"><input data-phr-cat value="${esc(p.categorie)}" style="width:150px" list="ph-cats"><input data-phr-txt value="${esc(p.texte)}" style="flex:1;min-width:220px"><button class="b" data-okphr="${p.id}">Enregistrer</button><button class="b sec" data-annphr>Annuler</button></div>`
+      : `<div class="barre" style="justify-content:space-between"><span>${esc(p.texte)}${p.partage ? '' : ' <span class="tag">Privée</span>'}</span><span>
+        ${peutCorriger(p) ? `<button class="b sec" data-corphr="${p.id}">✏️ Corriger</button>` : ''}
+        ${peutRetirer(p) ? `<button class="b danger" data-delphr="${p.id}">${B.confirmer === p.id ? 'Confirmer' : 'Retirer'}</button>` : ''}</span></div>`;
+    const liste = cats.map(c => `<h3>${esc(c)}</h3>${B.phrases.filter(p => p.categorie === c).map(ligne).join('')}`).join('');
+    return `<p class="petit">Phrases réutilisables dans toutes les appréciations (bouton 📋). Ajoute les tiennes ; coche « privée » pour les garder pour toi. Tu peux corriger tes phrases et les phrases de départ.</p>
       <div class="barre"><input id="ph-cat" placeholder="Catégorie (ex. Progrès)" style="width:170px" list="ph-cats"><datalist id="ph-cats">${cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist>
         <input id="ph-txt" placeholder="Phrase" style="flex:1;min-width:220px"><label class="petit"><input type="checkbox" id="ph-priv"> privée</label><button class="b" id="ph-ajout">Ajouter</button></div>${liste}`;
   }
@@ -348,6 +355,16 @@
         const r = await sb.from('banque_phrases').insert({ categorie, texte, partage: !$('#ph-priv').checked });
         if (r.error) dire('err', r.error.message); else dire('ok', 'Phrase ajoutée.'); recharger(chargerAppreciations);
       };
+      document.querySelectorAll('[data-corphr]').forEach(b => b.onclick = () => { B.modifPhr = b.dataset.corphr; refaire(); });
+      document.querySelectorAll('[data-annphr]').forEach(b => b.onclick = () => { B.modifPhr = null; refaire(); });
+      document.querySelectorAll('[data-okphr]').forEach(b => b.onclick = async () => {
+        const ligne = b.parentElement, texte = ligne.querySelector('[data-phr-txt]').value.trim(), categorie = ligne.querySelector('[data-phr-cat]').value.trim() || 'Divers';
+        if (!texte) { dire('err', 'La phrase ne peut pas être vide.'); return refaire(); }
+        const r = await sb.from('banque_phrases').update({ categorie, texte }).eq('id', b.dataset.okphr).select('id');
+        B.modifPhr = null;
+        if (r.error) dire('err', r.error.message); else if (!(r.data || []).length) dire('err', 'Tu ne peux corriger que tes phrases et les phrases de départ.'); else dire('ok', 'Phrase corrigée.');
+        recharger(chargerAppreciations);
+      });
       document.querySelectorAll('[data-delphr]').forEach(b => b.onclick = async () => {
         if (B.confirmer !== b.dataset.delphr) { B.confirmer = b.dataset.delphr; return refaire(); }
         B.confirmer = null; const r = await sb.from('banque_phrases').delete().eq('id', b.dataset.delphr).select('id');

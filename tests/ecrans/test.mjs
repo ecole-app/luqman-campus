@@ -84,7 +84,7 @@ const apres = await page.evaluate(id => ({ file: JSON.parse(localStorage.getItem
 ok('retour du réseau : tout est envoyé (2 saisies + validation)', apres.file === 0 && apres.abs.length === 2 && apres.abs.every(x => x.endsWith('*')) && apres.valide, JSON.stringify(apres));
 
 // --- Ouverture de l'appli sans réseau (copie gardée sur l'appareil) ---
-await page.evaluate(async m => { const c = await caches.open('lc-app-v10'); await c.put('http://localhost:8765/app/vendor/supabase-2.119.2.js', new Response(m, { headers: { 'Content-Type': 'application/javascript' } })); }, MOCK);
+await page.evaluate(async m => { const c = await caches.open('lc-app-v11'); await c.put('http://localhost:8765/app/vendor/supabase-2.119.2.js', new Response(m, { headers: { 'Content-Type': 'application/javascript' } })); }, MOCK);
 await page.setOfflineMode(true);
 const dbAvant = await page.evaluate(() => JSON.stringify(__DB));
 await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {}); await w(1500);
@@ -323,6 +323,10 @@ ok('💡 Proposer (générale) : brouillon rédigé à partir de la moyenne gén
 await page.$$eval('[data-asub="phrases"]', b => b[0].click()); await w(500);
 await page.type('#ph-cat', 'Perso'); await page.type('#ph-txt', 'Bravo pour la régularité.'); await clic('#ph-ajout'); await w(400);
 ok('banque de phrases : ajout', await page.evaluate(() => __DB.banque_phrases.some(p => p.texte === 'Bravo pour la régularité.')) && /Bravo pour la régularité/.test(await texte()));
+// banque de phrases : correction d'une phrase de départ (par un professeur)
+await page.$$eval('[data-corphr]', b => b[0].click()); await w(300);
+await page.$eval('[data-phr-txt]', i => { i.value = 'Phrase de départ corrigée par le prof.'; }); await page.$$eval('[data-okphr]', b => b[0].click()); await w(400);
+ok('banque de phrases : correction d’une phrase', await page.evaluate(() => __DB.banque_phrases.some(p => p.texte === 'Phrase de départ corrigée par le prof.')) && /Phrase de départ corrigée par le prof\./.test(await texte()));
 // bulletins : suivi, validation, aperçu, impression
 await onglet('bulletins'); await w(700);
 ok('bulletins : suivi du remplissage par matière', await page.evaluate(n => /Appréciations des matières/.test(document.querySelector('#vue').innerText) && new RegExp(`${n}/${n}`).test(document.querySelector('#vue').innerText) && /manquants/.test(document.querySelector('#vue').innerText), ctx4.nb));

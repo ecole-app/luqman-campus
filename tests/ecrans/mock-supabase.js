@@ -66,7 +66,7 @@
       if (this.op === 'insert') { this.rows.forEach(r => T.push(HOOK_(this.t, { id: uid(), created_at: now(), statut: this.t === 'punitions' ? (/retenue/i.test(r.type) ? 'demandee' : 'a_faire') : undefined, annulee: false, ...r, arrivee_a: this.t === 'passages_infirmerie' ? now() : r.arrivee_a }))); return { data: null, error: null }; }
       const emb = T.map(r => embed(r, this.sel));
       const ok = emb.map((r, i) => this.f.every(f => f(r)) ? i : -1).filter(i => i >= 0);
-      if (this.op === 'update') { ok.forEach(i => { Object.assign(T[i], this.vals); if (this.t === 'presences' && this.vals.statut) T[i].heure_evenement = this.vals.statut === 'present' ? null : now(); if (this.vals.statut === 'retard') T[i].minutes_retard = 15; }); return { data: null, error: null }; }
+      if (this.op === 'update') { ok.forEach(i => { Object.assign(T[i], this.vals); if (this.t === 'presences' && this.vals.statut) T[i].heure_evenement = this.vals.statut === 'present' ? null : now(); if (this.vals.statut === 'retard') T[i].minutes_retard = 15; }); return { data: ok.map(i => T[i]), error: null }; }
       if (this.op === 'delete') { const sup = ok.map(i => T[i]); ok.sort((a, b) => b - a).forEach(i => T.splice(i, 1)); return { data: sup, error: null }; }
       let d = ok.map(i => emb[i]);
       if (this.ord) { const [c, s] = this.ord; d.sort((a, b) => String(get(a, c) ?? '').localeCompare(String(get(b, c) ?? '')) * s); }
