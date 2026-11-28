@@ -9,4 +9,5 @@ jobs:
         with: { node-version: 22 }
       - run: npm ci
       - run: npm run test:db
+      - run: npm run test:edt
       - run: npm run test:ecrans

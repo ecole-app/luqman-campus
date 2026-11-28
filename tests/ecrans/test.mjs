@@ -35,7 +35,7 @@ const onglet = async k => { await clic(`#nav [data-k="${k}"]`); await w(300); };
 await page.goto(BASE, { waitUntil: 'networkidle0' });
 await w(500);
 const onglets = await page.$$eval('#nav button', b => b.map(x => x.dataset.k));
-ok('tous les onglets sont là', ['appel', 'suivi', 'fiche', 'pun', 'incidents', 'tel', 'infirmerie', 'tdb', 'eleves', 'classes', 'groupes', 'calendrier', 'notes', 'competences', 'appreciations', 'bulletins', 'conseil'].every(k => onglets.includes(k)), onglets.join(','));
+ok('tous les onglets sont là', ['appel', 'suivi', 'fiche', 'pun', 'incidents', 'tel', 'infirmerie', 'tdb', 'eleves', 'classes', 'groupes', 'calendrier', 'notes', 'competences', 'appreciations', 'bulletins', 'conseil', 'edt'].every(k => onglets.includes(k)), onglets.join(','));
 
 // --- Appel en ligne ---
 await clic('#v-fictifs'); await w(300);
@@ -449,6 +449,58 @@ await page.$$eval('[data-vue="evals"]', b => b[0] && b[0].click()); await w(400)
 await clic('[data-suppr]'); ok('suppression : première touche demande confirmation', /Confirmer la suppression/.test(await texte()));
 await clic('[data-suppr]'); await w(300);
 ok('évaluation supprimée après confirmation', /Aucune évaluation/.test(await texte()) && (await page.evaluate(() => __DB.evaluations.length)) === 0);
+
+// --- Étape 6 : emploi du temps ---
+await onglet('edt'); await w(600);
+ok('emploi du temps : onglet ouvert, aucune version au départ', /Aucun emploi du temps/.test(await texte()) && !!(await page.$('[data-esub="generer"]')));
+await page.$eval('[data-esub="generer"]', b => b.click()); await w(500);
+ok('emploi du temps : diagnostic avant génération (séances à placer, créneaux)', /12 séances \(12 h\) à placer sur 32 créneaux/.test(await texte()), (await texte()).slice(0, 400));
+await page.select('#e-gduree', '5000'); await page.$eval('#e-gnom', i => { i.value = 'Version test'; i.dispatchEvent(new Event('input')); });
+await clic('#e-gen'); await w(300);
+ok('emploi du temps : génération en cours (barre de progression)', !!(await page.$('.edt-prog')));
+await w(7000);
+ok('emploi du temps : résultat, tout est placé', /12 séances placées, tout est placé/.test(await texte()), (await texte()).slice(0, 600));
+await clic('#e-gsave'); await w(700);
+ok('emploi du temps : version enregistrée, affichée en grille', await page.evaluate(() => __DB.edt_versions.length === 1 && __DB.edt_versions[0].nom === 'Version test' && __DB.edt_seances.length === 12 && document.querySelectorAll('.edt-s').length === 6));
+await page.screenshot({ path: CAP('9-emploi-du-temps.png'), fullPage: true });
+ok('emploi du temps : jamais deux cours de la même classe au même créneau', await page.evaluate(() => { const vu = new Set(); return __DB.edt_seances.every(s => { const e = __DB.enseignements.find(x => x.id === s.enseignement_id), k = e.classe_id + s.creneau_id; if (vu.has(k)) return false; vu.add(k); return true; }); }));
+const s0 = await page.$eval('[data-seance]', b => b.dataset.seance);
+await clic(`[data-seance="${s0}"]`); await w(300);
+ok('emploi du temps : choisir une séance montre les places libres en vert', (await page.$$('td.libre')).length > 5);
+const vers = await page.$eval('td.libre', c => c.dataset.vers); await clic('td.libre'); await w(600);
+ok('emploi du temps : clic sur une case verte = séance déplacée', await page.evaluate((id, c) => __DB.edt_seances.find(x => x.id === id).creneau_id === c && /Séance déplacée/.test(document.querySelector('#vue').innerText), s0, vers));
+await clic('#e-verrou'); await w(500);
+ok('emploi du temps : séance verrouillée (🔒 dans la grille)', await page.evaluate(id => __DB.edt_seances.find(x => x.id === id).verrouillee === true && document.querySelector(`[data-seance="${id}"]`).innerText.includes('🔒'), s0));
+await page.select('#e-vue', 'salle'); await w(300); await page.select('#e-vue', 'classe'); await w(300);
+await page.evaluate(() => { window.__impEdt = 0; window.print = () => { window.__impEdt++; window.__txtEdt = document.querySelector('#lc-impression').innerText; }; }); await clic('#e-imp'); await w(200);
+ok('emploi du temps : impression de la grille', await page.evaluate(() => window.__impEdt === 1 && /Emploi du temps · 5e A/.test(window.__txtEdt)));
+// Contraintes
+await page.$eval('[data-esub="contraintes"]', b => b.click()); await w(500);
+ok('contraintes : heures et séances de la classe (6 h par semaine)', /6 h par semaine/.test(await texte()) && (await page.$$('[data-ens-bloc]')).length === 2);
+const ensEdt = await page.$eval('[data-ens-bloc]', s => s.dataset.ensBloc);
+await page.select(`[data-ens-bloc="${ensEdt}"]`, '2'); await w(400);
+ok('contraintes : durée de séance modifiée (2 h)', await page.evaluate(id => __DB.enseignements.find(e => e.id === id).bloc === 2, ensEdt));
+await page.select('#r-type', 'classe'); await w(300); await page.select('#r-jour', '1'); await page.$eval('#r-motif', i => { i.value = 'Sortie le lundi'; }); await clic('#r-ajout'); await w(500);
+ok('contraintes : indisponibilité obligatoire ajoutée (classe, lundi)', await page.evaluate(() => __DB.edt_regles.length === 1 && __DB.edt_regles[0].obligatoire === true && __DB.edt_regles[0].jour === 1 && /Sortie le lundi/.test(document.querySelector('#vue').innerText)));
+await page.$eval('#s-nom', i => { i.value = 'Gymnase'; }); await clic('#s-ajout'); await w(500);
+ok('contraintes : salle ajoutée', await page.evaluate(() => __DB.salles.some(x => x.nom === 'Gymnase')));
+// Régénérer en gardant la séance verrouillée : la règle du lundi est respectée
+await page.$eval('[data-esub="generer"]', b => b.click()); await w(400);
+await page.select('#e-gduree', '5000'); await clic('#e-gen'); await w(7200);
+ok('régénération : la règle « pas le lundi » est respectée pour la classe', await page.evaluate(() => { const r = __DB.edt_regles[0]; const res = __LC.E.gen.res; if (!res) return false;
+  return res.seances.every(s => { const e = __DB.enseignements.find(x => x.id === s.enseignement_id), c = __DB.creneaux.find(k => k.id === s.creneau_id); return e.classe_id !== r.cible_id || c.jour !== 1; }); }), await texte());
+await clic('#e-gremp'); await w(700);
+// Publier
+await page.$eval('[data-esub="publier"]', b => b.click()); await w(400);
+await page.$eval('#p-du', i => { i.value = '2027-01-04'; i.dispatchEvent(new Event('change')); }); await page.$eval('#p-au', i => { i.value = '2027-01-08'; i.dispatchEvent(new Event('change')); });
+await clic('#p-publier'); ok('publier : demande de confirmation', /Clique à nouveau pour confirmer/.test(await texte()));
+await clic('#p-publier'); await w(600);
+ok('publier : cours créés pour la semaine, version publiée', await page.evaluate(() => { const n = __DB.cours.filter(c => c.edt_version_id).length; return n > 0 && __DB.edt_versions[0].statut === 'publie' && new RegExp(n + ' cours créés').test(document.querySelector('#vue').innerText); }), await texte());
+await page.evaluate(() => { __DB.__droits = { admin: false, classes_pp: [], enseignements: [] }; __LC.N.pret = false; __LC.E.sub = 'grille'; });
+await onglet('appel'); await onglet('edt'); await w(600);
+ok('rôle prof : emploi du temps en lecture (grille seulement, pas de génération ni de déplacement)', await page.evaluate(() => !document.querySelector('[data-esub="generer"]') && document.querySelectorAll('.edt-s').length > 0 && (document.querySelector('[data-seance]') && (document.querySelector('[data-seance]').click(), !document.querySelector('#e-verrou')))));
+await page.evaluate(() => { __DB.__droits = null; __LC.N.pret = false; __DB.cours.splice(0, __DB.cours.length, ...__DB.cours.filter(c => !c.edt_version_id)); });
+await onglet('appel');
 
 // --- Étape 5 : conseil de classe (pilotage + écran projeté) ---
 await page.evaluate(c => { Object.assign(__LC.C, { classeId: c.classe, periodeId: c.per }); window.__imp = 0; window.print = () => { window.__imp++; window.__crTxt = document.querySelector('#lc-impression').innerText; }; }, ctx4);

@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "test:db": "node supabase/tests/run.mjs",
-    "test:ecrans": "node tests/ecrans/test.mjs"
+    "test:ecrans": "node tests/ecrans/test.mjs",
+    "test:edt": "node tests/edt/solveur.test.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.3.0",

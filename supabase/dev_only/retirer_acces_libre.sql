@@ -84,6 +84,9 @@ revoke execute on function public.peut_animer_conseil(uuid), public.ouvrir_conse
   public.noter_conseil_eleve(uuid, uuid, boolean, boolean, text) from anon;
 revoke all on public.conseils, public.conseil_eleves from anon;
 revoke all on public.photos_eleves from anon;
+revoke execute on function public.edt_donnees(uuid), public.controler_edt(uuid), public.enregistrer_edt(uuid, text, jsonb, jsonb),
+  public.modifier_seance(uuid, uuid, uuid, boolean, boolean), public.publier_edt(uuid, date, date) from anon;
+revoke all on public.salles, public.creneaux, public.edt_regles, public.edt_versions, public.edt_seances from anon;
 
 -- ---- Réglages ----
 revoke select, update on public.parametres from anon;

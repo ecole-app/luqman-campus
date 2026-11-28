@@ -27,6 +27,7 @@ await db.exec(readFileSync(new URL('../migrations/0012_bulletins_mise_en_page_su
 await db.exec(readFileSync(new URL('../migrations/0013_bilan_fin_de_cycle.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0014_conseil_de_classe.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0015_photos_eleves.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../migrations/0016_emploi_du_temps.sql', import.meta.url), 'utf8'));
 
 const U = { gest:'00000000-0000-0000-0000-000000000001', dir:'00000000-0000-0000-0000-000000000002',
   prof:'00000000-0000-0000-0000-000000000003', eleve:'00000000-0000-0000-0000-000000000004',
@@ -700,6 +701,93 @@ await test('photo : un professeur ne l’ajoute ni ne la modifie ; format et tai
   const c = await as('dir', `insert into photos_eleves(eleve_id, image) values ('${adam}', 'http://exemple.fr/photo.jpg')`);
   const d = await as('dir', `insert into photos_eleves(eleve_id, image) values ('${adam}', '${IMG}' || repeat('A', 200000))`);
   return !a.ok && (!b.ok || b.res.rows.length === 0) && !c.ok && !d.ok; });
+// ---------- Étape 6 : emploi du temps ----------
+const cr = async (jour, h) => (await un(`select id from creneaux where jour=${jour} and debut='${h}'`)).id;
+const L8 = await cr(1, '08:00'), L9 = await cr(1, '09:00'), L10 = await cr(1, '10:10'), L11 = await cr(1, '11:10'), L13 = await cr(1, '13:30'), M8 = await cr(2, '08:00');
+const sea = (ens, c, x = {}) => ({ enseignement_id: ens, creneau_id: c, ...x });
+const enr = (user, v, l, nom = 'Test') => as(user, `select enregistrer_edt(${v ? `'${v}'` : 'null'}, '${nom}', '${JSON.stringify(l)}'::jsonb) id`);
+let edtV;
+await test('edt : grille de départ (7 créneaux lundi, mardi, jeudi, vendredi ; mercredi matin) et données lues par le personnel', async () => {
+  const r = await as('prof', `select edt_donnees() d`); const d = r.res?.rows?.[0]?.d;
+  return r.ok && d.creneaux.length === 32 && d.creneaux.filter(c => c.jour === 3).length === 4 && d.enseignements.some(e => e.id === ensEps && e.bloc === 1) && d.max_matiere_jour === 2 && d.annee && Array.isArray(d.versions); });
+await test('edt : fermé aux élèves et aux visiteurs sans connexion', async () => {
+  const a = await as('eleve', `select edt_donnees()`); const b = await as('anon', `select edt_donnees()`); const c = await as('anon', `select * from creneaux`);
+  return !a.ok && !b.ok && (!c.ok || c.res.rows.length === 0); });
+await test('edt : la direction enregistre une version sans conflit', async () => {
+  const r = await enr('dir', null, [sea(ensEps, L8), sea(ensMath, L9)]); edtV = r.res?.rows?.[0]?.id;
+  const c = await as('dir', `select * from controler_edt('${edtV}')`); const n = await un(`select count(*)::int n from edt_seances where version_id='${edtV}'`);
+  return r.ok && c.res.rows.length === 0 && n.n === 2; });
+await test('edt : refus d’une classe ou d’un professeur à deux endroits en même temps', async () => {
+  const a = await enr('dir', edtV, [sea(ensEps, L8), sea(ensMath, L8)]);
+  const b = await enr('dir', edtV, [sea(ensMath, M8), sea(ens6, M8)]);
+  const n = await un(`select count(*)::int n from edt_seances where version_id='${edtV}'`);
+  return !a.ok && /5e A : deux cours en même temps/.test(a.err) && !b.ok && /deux classes en même temps/.test(b.err) && n.n === 2; });
+await test('edt : un même groupe ne peut pas avoir deux cours, deux groupes différents oui', async () => {
+  await db.exec(`insert into groupes(classe_id, nom) values ('${cl5}', 'G1'), ('${cl5}', 'G2')`);
+  await db.exec(`update enseignements set groupe_id=(select id from groupes where nom='G1') where id='${ensEps}'; update enseignements set groupe_id=(select id from groupes where nom='G2') where id='${ensMath}'`);
+  const a = await enr('dir', edtV, [sea(ensEps, L8), sea(ensMath, L8)]);
+  await db.exec(`update enseignements set groupe_id=null where id in ('${ensEps}','${ensMath}')`);
+  const b = await enr('dir', edtV, [sea(ensEps, L8), sea(ensMath, L8)]);
+  return a.ok && !b.ok; });
+await test('edt : séance de 2 h — refusée si elle déborde sur la pause de midi, acceptée par-dessus la récréation', async () => {
+  await db.exec(`update enseignements set bloc=2 where id='${ensEps}'`);
+  const a = await enr('dir', edtV, [sea(ensEps, L11), sea(ensMath, L8)]);
+  const b = await enr('dir', edtV, [sea(ensEps, L9), sea(ensMath, L8)]);
+  const c = await enr('dir', edtV, [sea(ensEps, L9), sea(ensMath, L10)]);
+  return !a.ok && /pause/.test(a.err) && b.ok && !c.ok; });
+await test('edt : indisponibilité obligatoire respectée ; une simple préférence ne bloque pas', async () => {
+  await db.exec(`insert into edt_regles(cible_type, cible_id, jour, debut, fin, obligatoire, motif) values ('professeur', '${U.prof2}', 1, '08:00', '12:30', true, 'M. Benali en formation le lundi matin')`);
+  const a = await enr('dir', edtV, [sea(ensEps, L9), sea(ensMath, L8)]);
+  await db.exec(`update edt_regles set obligatoire=false`);
+  const b = await enr('dir', edtV, [sea(ensEps, L9), sea(ensMath, L8)]);
+  return !a.ok && /formation le lundi matin/.test(a.err) && b.ok; });
+await test('edt : pas plus de 2 h d’une même matière par jour pour une classe (réglable)', async () => {
+  const a = await enr('dir', edtV, [sea(ensEps, L9), sea(ensMath, L8), sea(ensMath, L13), sea(ensMath, L11)]);
+  await db.exec(`update parametres set valeur='3' where cle='edt_max_matiere_jour'`);
+  const b = await enr('dir', edtV, [sea(ensEps, L9), sea(ensMath, L8), sea(ensMath, L13), sea(ensMath, L11)]);
+  await db.exec(`update parametres set valeur='2' where cle='edt_max_matiere_jour'`);
+  const c = await enr('dir', edtV, [sea(ensEps, L9), sea(ensMath, L8)]);
+  return !a.ok && /maximum 2/.test(a.err) && b.ok && c.ok; });
+await test('edt : une salle n’accueille qu’un cours à la fois', async () => {
+  await db.exec(`insert into salles(nom, type) values ('Gymnase', 'gymnase')`); const g = (await un(`select id from salles where nom='Gymnase'`)).id;
+  const a = await enr('dir', edtV, [sea(ensEps, L9, { salle_id: g }), sea(ens6, L9, { salle_id: g })]);
+  const b = await enr('dir', edtV, [sea(ensEps, L9, { salle_id: g }), sea(ensMath, L8)]);
+  return !a.ok && /Gymnase : deux cours/.test(a.err) && b.ok; });
+await test('edt : déplacer une séance vers un créneau libre ; refus vers un conflit (rien ne change) ; verrouiller', async () => {
+  const sM = (await un(`select s.id from edt_seances s where s.version_id='${edtV}' and s.enseignement_id='${ensMath}'`)).id;
+  const a = await as('dir', `select modifier_seance('${sM}', '${L13}')`);
+  const b = await as('dir', `select modifier_seance('${sM}', '${L10}')`);
+  const c = await as('dir', `select modifier_seance('${sM}', null, null, true)`);
+  const x = await un(`select creneau_id, verrouillee from edt_seances where id='${sM}'`);
+  return a.ok && !b.ok && x.creneau_id === L13 && x.verrouillee === true; });
+await test('edt : un professeur lit mais ne modifie ni n’enregistre ni ne publie', async () => {
+  const sM = (await un(`select id from edt_seances where version_id='${edtV}' limit 1`)).id;
+  const a = await enr('prof', null, []); const b = await as('prof', `select modifier_seance('${sM}', '${M8}')`); const c = await as('prof', `select publier_edt('${edtV}', '2027-01-04', '2027-01-15')`);
+  const d = await as('prof', `select count(*)::int n from edt_seances`); const e = await as('prof', `insert into salles(nom) values ('Intrus')`);
+  return !a.ok && !b.ok && !c.ok && d.res.rows[0].n === 2 && !e.ok; });
+await test('edt : publier crée les cours chaque semaine, sans les jours de fermeture ; séance de 2 h = un cours de 2 h', async () => {
+  await db.exec(`insert into fermetures(debut, fin, motif) values ('2027-01-11', '2027-01-11', 'Test fermeture')`);
+  const r = await as('dir', `select publier_edt('${edtV}', '2027-01-04', '2027-01-15') n`);
+  const c = await db.query(`select e.id ens, to_char(c.debut at time zone 'Europe/Paris', 'YYYY-MM-DD HH24:MI') d, to_char(c.fin at time zone 'Europe/Paris', 'HH24:MI') f, c.salle from cours c join enseignements e on e.id=c.enseignement_id where c.edt_version_id='${edtV}' order by c.debut`);
+  const eps = c.rows.filter(x => x.ens === ensEps);
+  const v = await un(`select statut, publie_du::text du from edt_versions where id='${edtV}'`);
+  return r.ok && r.res.rows[0].n === 2 && eps.length === 1 && eps[0].d === '2027-01-04 09:00' && eps[0].f === '11:05' && eps[0].salle === 'Gymnase' && c.rows.every(x => !x.d.startsWith('2027-01-11')) && v.statut === 'publie' && v.du === '2027-01-04'; });
+await test('edt : republier remplace sans doublon et garde un cours dont l’appel est ouvert ; la publication n’inonde pas le journal', async () => {
+  const c1 = (await un(`select c.id from cours c where c.edt_version_id='${edtV}' and c.enseignement_id='${ensEps}'`)).id;
+  await db.exec(`insert into appels(cours_id) values ('${c1}')`);
+  const avant = (await un(`select count(*)::int n from journal_audit where table_nom='cours'`)).n;
+  const r = await as('dir', `select publier_edt('${edtV}', '2027-01-04', '2027-01-15') n`);
+  const apres = (await un(`select count(*)::int n from journal_audit where table_nom='cours'`)).n;
+  const n = await un(`select count(*)::int n from cours where edt_version_id='${edtV}'`); const garde = await un(`select count(*)::int n from cours where id='${c1}'`);
+  const jv = await un(`select count(*)::int n from journal_audit where table_nom='edt_versions'`);
+  await db.exec(`delete from fermetures where motif='Test fermeture'`);
+  return r.ok && n.n === 2 && garde.n === 1 && apres === avant && jv.n >= 2; });
+await test('edt : une séance peut être plus courte que le bloc (EPS 3 h = 2 h + 1 h)', async () => {
+  const a = await enr('dir', edtV, [sea(ensEps, L9), sea(ensEps, M8, { duree: 1 }), sea(ensMath, L13)]);
+  const o = await db.query(`select seance_id, count(*)::int n from edt_occupation('${edtV}') group by seance_id order by n`);
+  return a.ok && o.rows.map(x => x.n).join(',') === '1,1,2'; });
+await test('edt : publication refusée avec des dates invalides', async () => {
+  const a = await as('dir', `select publier_edt('${edtV}', '2027-01-15', '2027-01-04')`); return !a.ok && /Dates/.test(a.err); });
 // ---------- Étape 5 : conseil de classe ----------
 let conseil5;
 await test('conseil : le professeur principal ouvre le conseil ; le rouvrir rend le même conseil', async () => {
@@ -819,6 +907,12 @@ await test('accès libre : le conseil de classe est utilisable sans connexion (o
 await test('accès libre : photo d’élève ajoutée et lue sans connexion (mode test)', async () => {
   const a = await as('anon', `insert into photos_eleves(eleve_id, image) values ('${adam}', '${IMG}') on conflict (eleve_id) do update set image = excluded.image returning eleve_id`);
   const b = await as('anon', `select eleve_id from photos_eleves`); return a.ok && b.res.rows.length >= 1; });
+await test('accès libre : l’emploi du temps est utilisable sans connexion (données, enregistrement, déplacement, contrôle)', async () => {
+  const a = await as('anon', `select edt_donnees() d`); const b = await as('anon', `select enregistrer_edt(null, 'Libre', '[{"enseignement_id":"${ensMath}","creneau_id":"${M8}"}]'::jsonb) id`);
+  const v = b.res?.rows?.[0]?.id; const s = v && (await un(`select id from edt_seances where version_id='${v}'`)).id;
+  const c = await as('anon', `select modifier_seance('${s}', '${L8}')`); const d = await as('anon', `select * from controler_edt('${v}')`);
+  const e = await as('anon', `insert into salles(nom) values ('Salle libre') returning id`);
+  return a.ok && b.ok && c.ok && d.ok && d.res.rows.length === 0 && e.ok; });
 await test('accès libre : les réglages sont lisibles et modifiables sans connexion (mode test)', async () => {
   const a = await as('anon', `select valeur from parametres where cle='mentions_bulletin'`);
   const b = await as('anon', `update parametres set valeur='17' where cle='note_seuil_haut' returning cle`);
@@ -828,6 +922,7 @@ await db.exec(lire('retirer_acces_libre.sql'));
 await test('après le retrait : réglages fermés sans connexion', async () => { const r = await as('anon', 'select * from parametres'); return !r.ok || r.res.rows.length === 0; });
 await test('après le retrait : plus de conseil de classe sans connexion', async () => {
   const p = await as('anon', 'select * from photos_eleves'); if (p.ok && p.res.rows.length) return 'photos encore visibles';
+  const t = await as('anon', 'select edt_donnees()'); if (t.ok) return 'emploi du temps encore ouvert';
   const a = await as('anon', 'select * from conseils'); const b = await as('anon', `select ouvrir_conseil('${cl5}', '${T1}')`);
   return (!a.ok || a.res.rows.length === 0) && !b.ok; });
 await test('après le retrait : plus de notes ni de moyennes sans connexion, et les droits par rôle reviennent', async () => {
