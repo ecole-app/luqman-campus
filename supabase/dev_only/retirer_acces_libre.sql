@@ -83,6 +83,7 @@ revoke all on public.bilans_cycle, public.syntheses_cycle from anon;
 revoke execute on function public.peut_animer_conseil(uuid), public.ouvrir_conseil(uuid, uuid), public.piloter_conseil(uuid, jsonb),
   public.noter_conseil_eleve(uuid, uuid, boolean, boolean, text) from anon;
 revoke all on public.conseils, public.conseil_eleves from anon;
+revoke all on public.photos_eleves from anon;
 
 -- ---- Réglages ----
 revoke select, update on public.parametres from anon;
