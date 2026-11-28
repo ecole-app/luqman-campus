@@ -26,6 +26,8 @@ Chaque point indique ce qui est fait aujourd'hui et ce qu'il faut décider.
 16. **En-tête et signatures.** Nom et adresse exacts du collège, logo, mentions légales ; cases de signature (professeur principal, direction, responsables légaux). *Fournir les informations.*
 17. **Banque de phrases partagée.** Tout professeur peut corriger les phrases de départ (elles changent alors pour tout le monde) ; seule la direction peut les retirer. *Décider : laisser ainsi, ou réserver la correction des phrases de départ à la direction ?*
 18. **Mise en page des bulletins.** La direction peut réordonner/masquer les blocs et les colonnes et retoucher le texte avant impression. *Décider : mise en page par défaut du collège ; qui a le droit de retoucher à la main un bulletin (aujourd'hui : direction uniquement) ; faut-il garder une trace des retouches ?*
+19. **Bilan de fin de cycle.** Grille officielle (8 composantes, 4 niveaux, synthèse) pour les 6e et les 3e ; total de points sur 400 (barème du brevet, 10/25/40/50) affiché par défaut. *Décider : garder l'affichage du total de points (le collège est hors contrat, sans protocole de brevet) ? Qui signe (chef d'établissement, professeur principal) ? Quand le remplir (3e trimestre) ?*
+20. **PDF des bulletins.** Généré dans l'appli : le texte y est une image (non sélectionnable, non recherchable). *Décider : suffisant, ou faut-il un PDF « texte » (génération côté serveur) pour l'archivage ?*
 
 ## À compléter aux étapes suivantes
 - Conseil de classe (étape 5) : qui anime, qui voit l'écran projeté.

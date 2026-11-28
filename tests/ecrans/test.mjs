@@ -84,7 +84,7 @@ const apres = await page.evaluate(id => ({ file: JSON.parse(localStorage.getItem
 ok('retour du réseau : tout est envoyé (2 saisies + validation)', apres.file === 0 && apres.abs.length === 2 && apres.abs.every(x => x.endsWith('*')) && apres.valide, JSON.stringify(apres));
 
 // --- Ouverture de l'appli sans réseau (copie gardée sur l'appareil) ---
-await page.evaluate(async m => { const c = await caches.open('lc-app-v12'); await c.put('http://localhost:8765/app/vendor/supabase-2.119.2.js', new Response(m, { headers: { 'Content-Type': 'application/javascript' } })); }, MOCK);
+await page.evaluate(async m => { const c = await caches.open('lc-app-v13'); await c.put('http://localhost:8765/app/vendor/supabase-2.119.2.js', new Response(m, { headers: { 'Content-Type': 'application/javascript' } })); }, MOCK);
 await page.setOfflineMode(true);
 const dbAvant = await page.evaluate(() => JSON.stringify(__DB));
 await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {}); await w(1500);
@@ -371,6 +371,32 @@ await page.$eval('#mep-annuler-retouches', b => b.click()); await w(200);
 ok('retouche : annulable', await page.evaluate(() => !/RETOUCHÉ/.test(document.querySelector('#b-rendu').innerText)));
 await page.$eval('#mep-reset', b => b.click()); await w(200);
 ok('mise en page : rétablir la mise en page standard', await page.evaluate(() => document.querySelectorAll('#b-rendu thead th').length === 5 && !!document.querySelector('#b-rendu .bu-sign')));
+// bilan de fin de cycle
+await page.$$eval('[data-bsub="cycle"]', b => b[0].click()); await w(500);
+await page.evaluate(() => { const c = __DB.classes.find(x => x.niveau === '5e'); Object.assign(__LC.B, { classeId: c.id }); });
+await page.$$eval('[data-bsub="suivi"]', b => b[0].click()); await w(300); await page.$$eval('[data-bsub="cycle"]', b => b[0].click()); await w(500);
+ok('bilan de fin de cycle : message clair pour une classe de 5e', await page.evaluate(() => /concerne les classes de 6e/.test(document.querySelector('#vue').innerText)));
+await page.evaluate(() => { const c = __DB.classes.find(x => x.niveau === '6e'); Object.assign(__LC.B, { classeId: c.id }); });
+await page.$$eval('[data-bsub="suivi"]', b => b[0].click()); await w(300); await page.$$eval('[data-bsub="cycle"]', b => b[0].click()); await w(600);
+ok('bilan de fin de cycle : une ligne par composante du cycle, 4 niveaux chacune', await page.evaluate(() => { const n = __DB.competences.filter(k => k.cycle === 3 && k.actif).length; return n > 0 && document.querySelectorAll('#vue tr input[data-cy]').length === n * 4; }));
+const cyEl = await page.evaluate(() => document.querySelector('#cy-eleve').value);
+const cyComp = await page.evaluate(() => document.querySelector('[data-cy]').dataset.cy);
+await page.evaluate(c => { document.querySelector(`[data-cy="${c}"][value="3"]`).click(); }, cyComp); await w(400);
+ok('bilan de fin de cycle : niveau choisi enregistré', await page.evaluate((e, c) => __DB.bilans_cycle.some(b => b.eleve_id === e && b.competence_id === c && b.niveau === 3), cyEl, cyComp));
+ok('bilan de fin de cycle : total des points affiché', await page.evaluate(() => /Total des points du socle/.test(document.querySelector('#vue').innerText) && Number(document.querySelector('#cy-total').textContent) === 40));
+await page.$eval('#cy-prop', b => b.click()); await w(500);
+ok('bilan de fin de cycle : 💡 Proposer rédige la synthèse à partir des niveaux', await page.evaluate(e => (__DB.syntheses_cycle.find(x => x.eleve_id === e) || {}).texte?.includes('Maîtrise satisfaisante pour la langue française'), cyEl));
+await page.evaluate(() => { window.__imp = 0; window.print = () => { window.__imp++; window.__cyPages = document.querySelectorAll('#lc-impression .bulletin').length; window.__cyTxt = document.querySelector('#lc-impression').innerText; }; });
+await clic('#cy-imp1'); await w(200);
+ok('bilan de fin de cycle : impression d’un bilan (composantes, total, synthèse)', await page.evaluate(() => window.__cyPages === 1 && /Bilan de fin de cycle 3/.test(window.__cyTxt) && /Total des points/.test(window.__cyTxt) && /Maîtrise satisfaisante pour la langue française/.test(window.__cyTxt)));
+await clic('#cy-impc'); await w(200);
+ok('bilan de fin de cycle : impression de toute la classe (une page par élève)', await page.evaluate(() => window.__cyPages === __DB.eleves.filter(e => e.classe_id === __LC.B.classeId).length));
+const pdf = await page.evaluate(async () => { const b = await __LC.pdfBlob([1, 2, 3].map(i => `<article class="bulletin"><h2>Page ${i}</h2><p>Bulletin de test avec accents éèà.</p></article>`)); const t = await b.slice(0, 5).text(); const all = await b.text(); return { t, taille: b.size, pages: (all.match(/\/Type\s*\/Page[^s]/g) || []).length }; });
+ok('PDF unique : un fichier PDF valide, une page par bulletin', pdf.t === '%PDF-' && pdf.taille > 3000 && pdf.pages === 3, JSON.stringify(pdf));
+await clic('#cy-pdfc'); await w(6000);
+ok('PDF unique : le bouton « PDF de la classe » télécharge et confirme', await page.evaluate(() => /PDF prêt : Bilans_fin_de_cycle_6e_A\.pdf/.test(document.querySelector('#vue').innerText)), await page.evaluate(() => document.querySelector('#vue').innerText.slice(0, 300)));
+await page.$eval('[data-cy-reset]', b => b.click()); await w(400);
+ok('bilan de fin de cycle : ↺ revient au niveau proposé', await page.evaluate((e, c) => !__DB.bilans_cycle.some(b => b.eleve_id === e && b.competence_id === c), cyEl, cyComp));
 // tableau de remplissage toutes classes
 await page.$$eval('[data-bsub="toutes"]', b => b[0].click()); await w(500);
 ok('toutes les classes : une carte par classe avec progression', await page.evaluate(() => document.querySelectorAll('#vue .carte .barre-prog').length >= 1 && /Classes complètes/.test(document.querySelector('#vue').innerText)));
