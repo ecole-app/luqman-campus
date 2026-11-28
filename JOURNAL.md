@@ -129,3 +129,10 @@ Demande d'Ahmed : aller au bout de l'étape 2 pour ne pas y revenir. Tout fait s
 - Migration `0012_bulletins_mise_en_page_suivi_historique.sql`. Tests : `test:db` 159/159, `test:ecrans` 120/120. Cache `lc-app-v12`, `bulletins.js?v=4`.
 - **Pour installer** : appliquer `0011` puis `0012` dans l'éditeur SQL, relancer `acces_libre.sql` en entier.
 - **Reste du lot** (décidé avec Ahmed) : bilan de fin de cycle (6e/3e), export PDF en un seul fichier, maquette de l'IA (non branchée, décision RGPD du directeur).
+
+## 2026-11-28 — Étape 4, améliorations (lot 2)
+- **Bilan de fin de cycle** (Bulletins › Bilan de fin de cycle, 6e = fin du cycle 3, 3e = fin du cycle 4) : 8 composantes du socle × 4 niveaux, niveau proposé d'après les compétences évaluées pendant l'année (●), corrigeable (↺ pour revenir au proposé), total de points (10/25/40/50, sur 400, réglage `bilan_cycle_afficher_points`), synthèse des acquis avec 💡 Proposer, impression d'un bilan ou de la classe. Migration `0013_bilan_fin_de_cycle.sql` (tables `bilans_cycle`, `syntheses_cycle`, RPC `donnees_bilan_cycle`, `saisir_bilan_cycle`). Réservé au professeur principal et à la direction.
+- **PDF unique** : boutons ⬇ « PDF de ce bulletin / de la classe » (bulletins et bilans de fin de cycle), généré dans le navigateur (html2pdf 0.10.3, MIT, vendu dans `app/vendor/`, chargé seulement au premier clic). Une page A4 par élève, mise en page du directeur respectée. Limite : le texte est une image dans le PDF (pas sélectionnable).
+- **IA** : décision d'Ahmed, on ne branche pas d'IA externe (les propositions par règles suffisent). Voir point 15 de la liste du directeur.
+- Tests : `test:db` 166/166, `test:ecrans` 130/130. Cache `lc-app-v13`, `bulletins.js?v=6`.
+- **Pour installer** : appliquer `0013` dans l'éditeur SQL, relancer `acces_libre.sql` en entier.

@@ -9,7 +9,7 @@
   const O = window.LCVS.notesOutils;
   const N = O.N, { fmt, opt, aujourdhui, nomClasse } = O;
   const B = { sub: 'matiere', bsub: 'suivi', classeId: '', ensId: '', periodeId: '', statut: 'ouvert', appr: {}, moy: {}, moyPrev: {}, nr: {}, nbNotes: {},
-    elements: '', data: null, prev: null, suivi: null, phrases: [], apercu: '', ouvertPhrases: null, filtrePhr: '', confirmer: null, modifPhr: null, uid: null, mep: null, mepSale: false, mepOuvert: false, retouche: false, retouches: {}, toutes: null, seulIncompletes: false, histoId: '', histo: [], maxAppr: 400, maxElem: 600, mentions: [], avis: {} };
+    elements: '', data: null, prev: null, suivi: null, phrases: [], apercu: '', ouvertPhrases: null, filtrePhr: '', confirmer: null, modifPhr: null, uid: null, mep: null, mepSale: false, mepOuvert: false, retouche: false, retouches: {}, cycle: null, cycleErr: '', cycleEleve: '', toutes: null, seulIncompletes: false, histoId: '', histo: [], maxAppr: 400, maxElem: 600, mentions: [], avis: {} };
   window.__LC.B = B;
 
   const css = document.createElement('style');
@@ -37,6 +37,9 @@
     .grille2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; } @media (max-width:700px) { .grille2 { grid-template-columns:1fr; } }
     #b-rendu [contenteditable=true] { outline:2px dashed #b45309; outline-offset:4px; }
     .bulletin .bu-defile { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .pdf-zone { position:absolute; left:-10000px; top:0; width:794px; background:#fff; color:#111; }
+    .pdf-zone .pdf-page { width:794px; height:1100px; padding:34px 40px; box-sizing:border-box; overflow:hidden; background:#fff; }
+    .pdf-zone .bulletin { border:none; border-radius:0; max-width:none; margin:0; padding:0; } .pdf-zone table { min-width:0 !important; } .pdf-zone .bu-defile { overflow:visible; }
     #lc-impression { display:none; }
     @media print {
       body.lc-imprime > *:not(#lc-impression) { display:none !important; }
@@ -197,6 +200,12 @@
   async function chargerBulletins() {
     await chargerCommun();
     if (B.bsub === 'reglages') return;
+    if (B.bsub === 'cycle') {
+      B.cycle = null; B.cycleErr = '';
+      const r = await sb.rpc('donnees_bilan_cycle', { p_classe: B.classeId });
+      if (r.error) { if (estReseau(r.error)) throw new Error('Pas de connexion : le bilan de fin de cycle a besoin du réseau.'); B.cycleErr = r.error.message; return; }
+      B.cycle = r.data; if (!B.cycle.eleves.some(e => e.id === B.cycleEleve)) B.cycleEleve = (B.cycle.eleves[0] || {}).id || ''; return;
+    }
     if (B.bsub === 'toutes') { const r = await sb.rpc('suivi_toutes_classes', { p_periode: B.periodeId }); if (r.error) throw new Error(r.error.message); B.toutes = r.data || []; return; }
     if (B.bsub === 'suivi') { const r = await sb.rpc('suivi_appreciations', { p_classe: B.classeId, p_periode: B.periodeId }); if (r.error) throw new Error(r.error.message); B.suivi = r.data; return; }
     await chargerDonnees();
@@ -440,6 +449,33 @@
         <button class="b sec" id="mep-annuler-retouches" ${Object.keys(B.retouches).length ? '' : 'hidden'}>Annuler les retouches (${Object.keys(B.retouches).length})</button></div>
       <div class="barre"><button class="b" id="mep-enreg" ${defaut ? 'disabled' : ''}>Enregistrer comme mise en page par défaut</button><button class="b sec" id="mep-reset">Rétablir la mise en page standard</button></div></div>`;
   }
+  // ---------- Export PDF (un seul fichier, généré dans le navigateur) ----------
+  let promessePdf = null;
+  const chargerPdf = () => window.html2pdf ? Promise.resolve() : (promessePdf = promessePdf || new Promise((ok, ko) => {
+    const sc = document.createElement('script'); sc.src = 'vendor/html2pdf-0.10.3.bundle.min.js';
+    sc.onload = ok; sc.onerror = () => { promessePdf = null; ko(new Error('Génération du PDF impossible : réseau nécessaire la première fois.')); }; document.head.appendChild(sc); }));
+  async function pdfBlob(pages) {
+    await chargerPdf();
+    const zone = document.createElement('div'); zone.className = 'pdf-zone'; document.body.appendChild(zone);
+    try {
+      const els = pages.map(h => { const d = document.createElement('div'); d.className = 'pdf-page'; d.innerHTML = h; zone.appendChild(d); return d; });
+      els.forEach(pg => { const a = pg.firstElementChild; if (a && a.scrollHeight > 1050) a.classList.add('bu-compact'); });
+      const opt = { margin: 0, image: { type: 'jpeg', quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' }, jsPDF: { unit: 'px', format: [794, 1123], hotfixes: ['px_scaling'] } };
+      let wk = window.html2pdf().set(opt).from(els[0]).toPdf();
+      for (let k = 1; k < els.length; k++) wk = wk.get('pdf').then(pdf => { pdf.addPage(); }).from(els[k]).toContainer().toCanvas().toPdf();
+      return await wk.outputPdf('blob');
+    } finally { zone.remove(); }
+  }
+  async function telechargerPdf(pages, nom) {
+    dire('info', `Génération du PDF (${pages.length} page${pages.length > 1 ? 's' : ''})… quelques secondes.`); refaire();
+    try {
+      const blob = await pdfBlob(pages), u = URL.createObjectURL(blob), a = document.createElement('a');
+      a.href = u; a.download = nom.replace(/[^\w.\-À-ÿ]+/g, '_') + '.pdf'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 60000);
+      dire('ok', 'PDF prêt : ' + a.download + ' (' + Math.round(blob.size / 1024) + ' Ko).');
+    } catch (e) { dire('err', String(e.message || e)); }
+    refaire();
+  }
+  window.__LC.pdfBlob = pdfBlob;
   function imprimer(html) {
     let z = document.getElementById('lc-impression'); if (!z) { z = document.createElement('div'); z.id = 'lc-impression'; document.body.appendChild(z); }
     z.innerHTML = html; document.body.classList.add('lc-imprime');
@@ -450,11 +486,12 @@
   // ---------- Onglet Bulletins ----------
   function vueBulletins() {
     if (!S.classes.length) return `<div class="carte"><h2>Bulletins</h2><p class="doux">Crée d’abord des classes et des élèves.</p></div>`;
-    const onglets = [['suivi', 'Suivi du remplissage']].concat(estAdm() ? [['toutes', 'Toutes les classes']] : [], [['apercu', 'Aperçu et impression']], estAdm() ? [['reglages', 'Réglages']] : []);
+    const onglets = [['suivi', 'Suivi du remplissage']].concat(estAdm() ? [['toutes', 'Toutes les classes']] : [], [['apercu', 'Aperçu et impression'], ['cycle', 'Bilan de fin de cycle']], estAdm() ? [['reglages', 'Réglages']] : []);
     const nav = `<div class="sousnav">${onglets.map(([k, l]) => `<button data-bsub="${k}" class="${B.bsub === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
     let corps;
     if (B.bsub === 'reglages' && estAdm()) corps = vueReglagesB();
     else if (B.bsub === 'toutes' && estAdm()) corps = selecteurs(false) + vueToutes();
+    else if (B.bsub === 'cycle') corps = selecteurs(false) + vueCycle();
     else if (B.bsub === 'apercu') corps = selecteurs(false) + vueApercu();
     else corps = selecteurs(false) + vueSuivi();
     return `${msg()}<div class="carte"><h2>Bulletins</h2>${nav}${corps}</div>`;
@@ -469,6 +506,58 @@
       ${s.statut === 'valide' ? '<button class="b" data-statut="publie">Publier (prêt pour les familles)</button>' : ''}<span class="petit">L’espace familles ouvrira en phase 2 : « publié » prépare cette diffusion.</span></div>` : '';
     return `<div class="stat"><span>Appréciations des matières : <strong>${total}/${attendu}</strong></span><span>Appréciations générales : <strong>${s.generales}/${s.eleves}</strong></span></div>${actions}
       <div class="tablewrap"><table class="bu-suivi"><tr><th>Matière</th><th>Appréciations</th><th></th><th>Éléments du programme</th></tr>${lignes}</table></div>`;
+  }
+  // ---------- Bilan de fin de cycle (6e, 3e) ----------
+  const NOM_COMP = { 'D1.1': 'la langue française', 'D1.2': 'les langues étrangères', 'D1.3': 'les langages mathématiques et scientifiques', 'D1.4': 'les langages des arts et du corps',
+    D2: 'les méthodes et outils pour apprendre', D3: 'la formation de la personne et du citoyen', D4: 'les systèmes naturels et techniques', D5: 'les représentations du monde et l’activité humaine' };
+  const liste = a => a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' et ' + a[a.length - 1];
+  function syntheseCycle(D, el) {
+    const par = n => D.composantes.filter(c => (el.niveaux.find(x => x.competence_id === c.id) || {}).retenu === n).map(c => NOM_COMP[c.code] || c.libelle);
+    const [n4, n3, n2, n1] = [par(4), par(3), par(2), par(1)];
+    if (!n4.length && !n3.length && !n2.length && !n1.length) return '';
+    const p = [];
+    if (n4.length) p.push(`Très bonne maîtrise pour ${liste(n4)}.`);
+    if (n3.length) p.push(`Maîtrise satisfaisante pour ${liste(n3)}.`);
+    if (n2.length) p.push(`Maîtrise encore fragile pour ${liste(n2)} : à consolider.`);
+    if (n1.length) p.push(`Maîtrise insuffisante pour ${liste(n1)} : un accompagnement est nécessaire.`);
+    return p.join(' ');
+  }
+  const totalPoints = (D, el) => D.composantes.reduce((a, c) => a + (D.points[(el.niveaux.find(x => x.competence_id === c.id) || {}).retenu] || 0), 0);
+  const nbRetenus = (D, el) => D.composantes.filter(c => (el.niveaux.find(x => x.competence_id === c.id) || {}).retenu).length;
+  function vueCycle() {
+    if (!estPP()) return '<p class="doux">Le bilan de fin de cycle est réservé au professeur principal de la classe et à la direction.</p>';
+    if (B.cycleErr) return `<p class="doux">${esc(B.cycleErr)}</p>`;
+    const D = B.cycle; if (!D) return '<p class="doux">Chargement…</p>';
+    if (!D.eleves.length) return '<p class="doux">Aucun élève dans cette classe.</p>';
+    const el = D.eleves.find(e => e.id === B.cycleEleve) || D.eleves[0];
+    const faits = D.eleves.filter(e => (e.synthese || '').trim()).length;
+    const lignes = D.composantes.map(c => { const n = el.niveaux.find(x => x.competence_id === c.id) || {};
+      return `<tr><td><strong>${esc(c.code)}</strong> ${esc(c.libelle)}${n.nb ? `<div class="petit">${n.nb} évaluation${n.nb > 1 ? 's' : ''} sur l’année · moyenne ${fmt(n.moyenne)}</div>` : '<div class="petit">aucune évaluation liée</div>'}</td>
+        ${[1, 2, 3, 4].map(k => `<td class="c"><label title="${esc(N.niveaux[k - 1])}"><input type="radio" name="cy-${c.id}" data-cy="${c.id}" value="${k}" ${n.retenu === k ? 'checked' : ''}>${n.propose === k ? '<span class="petit" title="Niveau proposé d’après les évaluations">●</span>' : ''}</label></td>`).join('')}
+        <td class="c">${n.modifie ? `<button class="lien" data-cy-reset="${c.id}" title="Revenir au niveau proposé">↺</button>` : ''}</td></tr>`; }).join('');
+    const sy = el.synthese || '';
+    return `<div class="barre"><select id="cy-eleve">${D.eleves.map(e => opt(e.id, e.nom + ' ' + e.prenom + ((e.synthese || '').trim() ? ' ✓' : ''), e.id === el.id)).join('')}</select>
+        <button class="b" id="cy-imp1">🖨 Imprimer ce bilan</button><button class="b sec" id="cy-impc">🖨 Toute la classe (${D.eleves.length})</button><button class="b sec" id="cy-pdfc">⬇ PDF de la classe</button></div>
+      <p class="petit">Bilan de fin de cycle ${D.cycle} · ${esc(D.classe.nom)} · synthèses saisies : <strong>${faits}/${D.eleves.length}</strong>. Le niveau <strong>●</strong> est proposé d’après les compétences évaluées pendant l’année ; clique pour le corriger.</p>
+      <div class="bu-defile"><table class="bu-suivi" style="min-width:560px"><tr><th>Composante du socle</th>${N.niveaux.map(x => `<th class="c" style="width:12%">${esc(x)}</th>`).join('')}<th style="width:5%"></th></tr>${lignes}
+        ${D.afficher_points ? `<tr><td><strong>Total des points du socle</strong></td><td colspan="5"><strong id="cy-total">${totalPoints(D, el)}</strong> / ${D.composantes.length * 50}${nbRetenus(D, el) < D.composantes.length ? ' <span class="petit">(composantes sans niveau non comptées)</span>' : ''}</td></tr>` : ''}</table></div>
+      <h3>Synthèse des acquis de fin de cycle</h3>
+      <textarea id="cy-synthese" rows="4" style="width:100%" maxlength="2000" placeholder="Synthèse des acquis et conseils pour la suite…">${esc(sy)}</textarea>
+      <div class="ap-pied"><button class="lien" id="cy-prop">💡 Proposer</button><span class="etat" id="cy-etat"></span></div>`;
+  }
+  function htmlBilanCycle(D, el) {
+    const ligne = c => { const n = el.niveaux.find(x => x.competence_id === c.id) || {};
+      return `<tr><td><strong>${esc(c.code)}</strong> ${esc(c.libelle)}</td>${[1, 2, 3, 4].map(k => `<td class="c">${n.retenu === k ? '●' : '○'}</td>`).join('')}</tr>`; };
+    return `<article class="bulletin">
+      <div class="bu-tete"><div><h2>${esc(D.etablissement.nom || 'Établissement')}</h2><div class="bu-prof">${esc(D.etablissement.adresse || '')}</div></div>
+        <div style="text-align:right"><strong>Bilan de fin de cycle ${D.cycle}</strong><div>Année ${esc(D.classe.annee || '')}</div></div></div>
+      <div class="barre" style="justify-content:space-between;margin:0 0 8px"><span><strong style="font-size:15px">${esc(el.nom.toUpperCase() + ' ' + el.prenom)}</strong>${el.date_naissance ? ` · né(e) le ${jourFr(el.date_naissance)}` : ''}</span>
+        <span>Classe : <strong>${esc(D.classe.nom)}</strong>${D.classe.prof_principal ? ` · Professeur principal : ${esc(D.classe.prof_principal)}` : ''}</span></div>
+      <div class="bu-defile"><table style="min-width:560px"><thead><tr><th>Composante du socle commun</th>${N.niveaux.map(x => `<th style="width:12%">${esc(x)}</th>`).join('')}</tr></thead><tbody>${D.composantes.map(ligne).join('')}</tbody>
+        ${D.afficher_points ? `<tfoot><tr><td><strong>Total des points du socle</strong></td><td colspan="4"><strong>${totalPoints(D, el)}</strong> / ${D.composantes.length * 50}</td></tr></tfoot>` : ''}</table></div>
+      <div class="bu-bloc"><h3>Synthèse des acquis de fin de cycle</h3>${esc(el.synthese || '')}</div>
+      <div class="bu-sign"><div>Le professeur principal</div><div>Le chef d’établissement</div><div>Signature des responsables légaux</div></div>
+      <div class="bu-pied"><span>Bilan de fin de cycle d’après le livret scolaire (arrêté du 31 décembre 2015) · socle commun (décret 2015-372).</span><span>Édité le ${new Date().toLocaleDateString('fr-FR')}</span></div></article>`;
   }
   function vueToutes() {
     const T = B.toutes; if (!T) return '<p class="doux">Chargement…</p>';
@@ -495,8 +584,8 @@
     if (!D.eleves.length) return '<p class="doux">Aucun élève dans cette classe.</p>';
     const el = D.eleves.find(e => e.id === B.apercu) || D.eleves[0];
     return `<div class="barre"><select id="b-eleve">${D.eleves.map(e => opt(e.id, e.nom + ' ' + e.prenom, e.id === el.id)).join('')}</select>
-        <button class="b" id="b-imp1">🖨 Imprimer ce bulletin</button><button class="b sec" id="b-impc">🖨 Imprimer toute la classe (${D.eleves.length})</button>${estAdm() ? `<button class="b sec" id="b-mep-ouvrir">🎛 Mettre en page${B.mepOuvert ? ' ▲' : ' ▼'}</button>` : ''}
-        <span class="petit">Pour un PDF : choisis « Enregistrer au format PDF » dans la fenêtre d’impression.</span></div>
+        <button class="b" id="b-imp1">🖨 Imprimer ce bulletin</button><button class="b sec" id="b-impc">🖨 Imprimer toute la classe (${D.eleves.length})</button><button class="b sec" id="b-pdf1">⬇ PDF de ce bulletin</button><button class="b sec" id="b-pdfc">⬇ PDF de la classe</button>${estAdm() ? `<button class="b sec" id="b-mep-ouvrir">🎛 Mettre en page${B.mepOuvert ? ' ▲' : ' ▼'}</button>` : ''}
+        <span class="petit">Le PDF se télécharge directement, avec la mise en page choisie.</span></div>
       ${D.statut === 'ouvert' ? '<div class="msg info">Bulletins encore ouverts à la saisie : l’impression porte la mention « PROVISOIRE ».</div>' : ''}
       ${estAdm() && B.mepOuvert ? panneauMEP() : ''}${B.retouches[el.id] ? '<div class="msg info">Ce bulletin a été retouché à la main (non enregistré, valable pour l’impression). <button class="lien" id="b-annuler-retouche">Annuler la retouche</button></div>' : ''}
       <div id="b-rendu">${htmlEleve(D, el)}</div>`;
@@ -526,6 +615,33 @@
       recharger(chargerBulletins);
     });
 
+    const cyEl = $('#cy-eleve'); if (cyEl) cyEl.onchange = () => { B.cycleEleve = cyEl.value; refaire(); };
+    if (B.bsub === 'cycle' && B.cycle && !B.cycleErr) {
+      const D = B.cycle, el = D.eleves.find(e => e.id === B.cycleEleve) || D.eleves[0];
+      const maj = (comp, niveau) => { const n = el.niveaux.find(x => x.competence_id === comp); if (!n) return; if (niveau == null) { n.retenu = n.propose; n.modifie = false; } else { n.retenu = niveau; n.modifie = true; } };
+      const envoyer = async (niveaux, synthese) => sb.rpc('saisir_bilan_cycle', { p_eleve: el.id, p_niveaux: niveaux, p_synthese: synthese });
+      document.querySelectorAll('[data-cy]').forEach(r => r.onchange = async () => {
+        const rep = await envoyer([{ competence_id: r.dataset.cy, niveau: Number(r.value) }], null);
+        if (rep.error) { dire('err', estReseau(rep.error) ? 'Pas de connexion : le niveau n’a pas été enregistré.' : rep.error.message); return recharger(chargerBulletins); }
+        el.synthese = $('#cy-synthese').value.trim(); maj(r.dataset.cy, Number(r.value)); refaire();
+      });
+      document.querySelectorAll('[data-cy-reset]').forEach(b => b.onclick = async () => {
+        const rep = await envoyer([{ competence_id: b.dataset.cyReset, niveau: null }], null);
+        if (rep.error) dire('err', rep.error.message); else maj(b.dataset.cyReset, null); el.synthese = $('#cy-synthese').value.trim(); refaire();
+      });
+      const ta = $('#cy-synthese'), etat = $('#cy-etat'); let minuteur;
+      const sauver = async () => { clearTimeout(minuteur); const t = ta.value.trim(); etat.textContent = 'Enregistrement…';
+        const rep = await envoyer([], t);
+        if (rep.error) { etat.textContent = estReseau(rep.error) ? 'Pas de connexion' : rep.error.message; etat.className = 'etat err'; return; }
+        el.synthese = t; etat.textContent = 'Enregistré ✓'; etat.className = 'etat ok'; };
+      ta.oninput = () => { etat.textContent = ''; clearTimeout(minuteur); minuteur = setTimeout(sauver, 1500); };
+      ta.onchange = sauver;
+      $('#cy-prop').onclick = () => { const p = syntheseCycle(D, el); if (!p) { dire('err', 'Choisis d’abord les niveaux des composantes.'); return refaire(); }
+        ta.value = ta.value.trim() ? ta.value.trim() + ' ' + p : p; sauver(); };
+      $('#cy-pdfc').onclick = () => telechargerPdf(D.eleves.map(e => htmlBilanCycle(D, e)), `Bilans_fin_de_cycle_${D.classe.nom}`);
+      $('#cy-imp1').onclick = () => imprimer(htmlBilanCycle(D, el));
+      $('#cy-impc').onclick = () => imprimer(D.eleves.map(e => htmlBilanCycle(D, e)).join(''));
+    }
     const inc = $('#t-incompletes'); if (inc) inc.onchange = () => { B.seulIncompletes = inc.checked; refaire(); };
     document.querySelectorAll('[data-ouvrir-classe]').forEach(b => b.onclick = () => { B.classeId = b.dataset.ouvrirClasse; B.bsub = 'suivi'; recharger(chargerBulletins); });
     const ouvM = $('#b-mep-ouvrir'); if (ouvM) ouvM.onclick = () => { B.mepOuvert = !B.mepOuvert; refaire(); };
@@ -548,6 +664,8 @@
     const rendu = $('#b-rendu'); if (rendu && estAdm() && B.retouche) { const art = rendu.firstElementChild; if (art) { art.contentEditable = 'true'; art.oninput = () => { const c = art.cloneNode(true); c.removeAttribute('contenteditable'); B.retouches[B.apercu] = c.outerHTML; const bt = $('#mep-annuler-retouches'); if (bt) { bt.hidden = false; bt.textContent = `Annuler les retouches (${Object.keys(B.retouches).length})`; } }; } }
     const se = $('#b-eleve'); if (se) se.onchange = () => { B.apercu = se.value; refaire(); };
     const i1 = $('#b-imp1'); if (i1) i1.onclick = () => imprimer(htmlEleve(B.data, B.data.eleves.find(e => e.id === B.apercu) || B.data.eleves[0]));
+    const p1 = $('#b-pdf1'); if (p1) p1.onclick = () => { const e = B.data.eleves.find(x => x.id === B.apercu) || B.data.eleves[0]; telechargerPdf([htmlEleve(B.data, e)], `Bulletin_${e.nom}_${e.prenom}_${B.data.periode.libelle}`); };
+    const pc = $('#b-pdfc'); if (pc) pc.onclick = () => telechargerPdf(B.data.eleves.map(e => htmlEleve(B.data, e)), `Bulletins_${B.data.classe.nom}_${B.data.periode.libelle}`);
     const ic = $('#b-impc'); if (ic) ic.onclick = () => imprimer(B.data.eleves.map(e => htmlEleve(B.data, e)).join(''));
     const g = $('#g-enreg'); if (g) g.onclick = async () => {
       const n = id => Number(String($(id).value).replace(',', '.'));

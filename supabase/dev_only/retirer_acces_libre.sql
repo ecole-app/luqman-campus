@@ -77,5 +77,9 @@ revoke all on public.modeles_evaluation from anon;
 revoke execute on function public.saisir_appreciations(uuid, uuid, jsonb), public.saisir_elements_programme(uuid, uuid, text), public.saisir_appreciation_generale(uuid, uuid, text, text), public.changer_statut_bulletin(uuid, uuid, text), public.suivi_appreciations(uuid, uuid), public.donnees_bulletins(uuid, uuid), public.suivi_toutes_classes(uuid), public.historique_appreciations(uuid, uuid, uuid) from anon;
 revoke all on public.appreciations, public.elements_programme, public.appreciations_generales, public.bulletins_periode, public.banque_phrases from anon;
 
+-- ---- Étape 4 (compléments) : bilan de fin de cycle ----
+revoke execute on function public.saisir_bilan_cycle(uuid, jsonb, text), public.donnees_bilan_cycle(uuid) from anon;
+revoke all on public.bilans_cycle, public.syntheses_cycle from anon;
+
 -- ---- Réglages ----
 revoke select, update on public.parametres from anon;

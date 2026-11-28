@@ -154,6 +154,23 @@
         statut: (DB.bulletins_periode.find(b => b.classe_id === p_classe && b.periode_id === p_periode) || {}).statut || 'ouvert',
         matieres: DB.enseignements.filter(en => en.classe_id === p_classe).map(en => ({ enseignement_id: en.id, matiere: DB.matieres.find(m => m.id === en.matiere_id).nom, professeur: null,
           appreciations: DB.appreciations.filter(a => a.enseignement_id === en.id && a.periode_id === p_periode).length, elements: DB.elements_programme.some(x => x.enseignement_id === en.id && x.periode_id === p_periode) })) }; },
+    donnees_bilan_cycle({ p_classe }) {
+      const cl = DB.classes.find(c => c.id === p_classe);
+      if (cl.niveau !== '6e' && cl.niveau !== '3e') throw new Error('Le bilan de fin de cycle concerne les classes de 6e (fin du cycle 3) et de 3e (fin du cycle 4).');
+      const cy = cl.niveau === '6e' ? 3 : 4, comps = DB.competences.filter(k => k.cycle === cy && k.actif).sort((a, b) => a.ordre - b.ordre), bc = RPC.bilan_competences({ p_classe, p_periode: null });
+      DB.bilans_cycle = DB.bilans_cycle || []; DB.syntheses_cycle = DB.syntheses_cycle || [];
+      return { etablissement: { nom: 'Collège Luqmân', adresse: 'Saint-Étienne' }, classe: { id: cl.id, nom: cl.nom, niveau: cl.niveau, prof_principal: null, annee: '2026-2027' }, cycle: cy, afficher_points: true, points: { 1: 10, 2: 25, 3: 40, 4: 50 },
+        composantes: comps.map(k => ({ id: k.id, code: k.code, domaine: k.domaine, libelle: k.libelle })),
+        eleves: DB.eleves.filter(e => e.classe_id === p_classe && !e.deleted_at).map(e => ({ id: e.id, nom: e.nom, prenom: e.prenom, date_naissance: e.date_naissance, synthese: (DB.syntheses_cycle.find(x => x.eleve_id === e.id) || {}).texte || null,
+          niveaux: comps.map(k => { const b = bc.find(x => x.eleve_id === e.id && x.competence_id === k.id) || {}, o = DB.bilans_cycle.find(x => x.eleve_id === e.id && x.competence_id === k.id);
+            return { competence_id: k.id, nb: b.nb || 0, moyenne: b.moyenne ?? null, propose: b.niveau_propose ?? null, retenu: o ? o.niveau : (b.niveau_propose ?? null), modifie: !!o }; })})) };
+    },
+    saisir_bilan_cycle({ p_eleve, p_niveaux, p_synthese }) {
+      DB.bilans_cycle = DB.bilans_cycle || []; DB.syntheses_cycle = DB.syntheses_cycle || [];
+      (p_niveaux || []).forEach(x => { const i = DB.bilans_cycle.findIndex(b => b.eleve_id === p_eleve && b.competence_id === x.competence_id); if (i >= 0) DB.bilans_cycle.splice(i, 1);
+        if (x.niveau != null) DB.bilans_cycle.push({ eleve_id: p_eleve, competence_id: x.competence_id, niveau: x.niveau }); });
+      if (p_synthese != null) { const i = DB.syntheses_cycle.findIndex(b => b.eleve_id === p_eleve); if (i >= 0) DB.syntheses_cycle.splice(i, 1); if (p_synthese.trim()) DB.syntheses_cycle.push({ eleve_id: p_eleve, texte: p_synthese.trim() }); }
+      return null; },
     suivi_toutes_classes({ p_periode }) {
       return DB.classes.map(c => RPC.suivi_appreciations({ p_classe: c.id, p_periode })).map((x, i) => ({ ...x, classe_id: DB.classes[i].id, classe: DB.classes[i].nom, prof_principal: null })); },
     historique_appreciations({ p_eleve, p_ens, p_periode }) {

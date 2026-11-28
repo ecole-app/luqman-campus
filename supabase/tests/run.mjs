@@ -24,6 +24,7 @@ await db.exec(readFileSync(new URL('../migrations/0009_modeles_auteur_optionnel.
 await db.exec(readFileSync(new URL('../migrations/0010_appreciations_bulletins.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0011_phrases_correction_profs.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0012_bulletins_mise_en_page_suivi_historique.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../migrations/0013_bilan_fin_de_cycle.sql', import.meta.url), 'utf8'));
 
 const U = { gest:'00000000-0000-0000-0000-000000000001', dir:'00000000-0000-0000-0000-000000000002',
   prof:'00000000-0000-0000-0000-000000000003', eleve:'00000000-0000-0000-0000-000000000004',
@@ -640,6 +641,47 @@ await test('historique des appréciations : visible par le professeur de la mati
   const autre = await as('vs2', `select * from historique_appreciations('${sarah}', '${ensEps}', '${T1}')`);
   const a = await as('anon', `select * from historique_appreciations('${sarah}', '${ensEps}', '${T1}')`);
   return h.ok && h.res.rows.length >= 2 && h.res.rows[0].apres === 'Texte corrigé une deuxième fois.' && h.res.rows[0].avant != null && (!autre.ok || autre.res.rows.length === 0) && !a.ok; });
+// ---------- Bilan de fin de cycle (6e, 3e) ----------
+await db.exec(`
+  insert into eleves(nom, prenom, date_naissance, ine, classe_id) select 'Benali','Lina','2014-05-05','12345678960', id from classes where nom='6e A';
+  insert into enseignements(classe_id, matiere_id, professeur_id, coefficient) select c.id, m.id, '${U.prof2}', 1 from classes c, matieres m where c.nom='6e A' and m.code='EPS';
+`);
+const cl6 = (await un(`select id from classes where nom='6e A'`)).id; const linaC = (await un(`select id from eleves where prenom='Lina'`)).id;
+const ens6 = (await un(`select e.id from enseignements e where e.classe_id='${cl6}'`)).id;
+await db.exec(`
+  insert into evaluations(enseignement_id, titre, date_eval) values ('${ens6}', 'Bilan test cycle', '2026-10-12');
+  insert into evaluation_competences(evaluation_id, competence_id) select ev.id, k.id from evaluations ev, competences k where ev.titre='Bilan test cycle' and k.cycle=3 and k.code in ('D1.4','D3');
+  insert into acquisitions(evaluation_id, competence_id, eleve_id, niveau) select ev.id, k.id, '${linaC}', case k.code when 'D1.4' then 4 else 2 end from evaluations ev, competences k where ev.titre='Bilan test cycle' and k.cycle=3 and k.code in ('D1.4','D3');
+`);
+await test('bilan de fin de cycle : proposé d’après les compétences de l’année, 8 composantes, points 10/25/40/50', async () => {
+  const r = await as('dir', `select donnees_bilan_cycle('${cl6}') d`); const d = r.res.rows[0].d; const l = d.eleves.find(e => e.id === linaC);
+  const g = code => { const k = d.composantes.find(c => c.code === code); return l.niveaux.find(n => n.competence_id === k.id); };
+  return r.ok && d.cycle === 3 && d.composantes.length === 8 && g('D1.4').propose === 4 && g('D1.4').modifie === false && g('D3').propose === 2 && g('D1.1').retenu == null && d.points['3'] === 40; });
+await test('bilan de fin de cycle : la direction ajuste un niveau et écrit la synthèse ; le niveau retenu remplace le proposé', async () => {
+  const k = (await un(`select id from competences where cycle=3 and code='D1.4'`)).id;
+  const a = await as('dir', `select saisir_bilan_cycle('${linaC}', '[{"competence_id":"${k}","niveau":3}]'::jsonb, 'Élève sérieuse, à l''aise à l''oral.')`);
+  const d = (await as('dir', `select donnees_bilan_cycle('${cl6}') d`)).res.rows[0].d; const l = d.eleves.find(e => e.id === linaC); const n = l.niveaux.find(x => x.competence_id === k);
+  return a.ok && n.retenu === 3 && n.propose === 4 && n.modifie === true && l.synthese === 'Élève sérieuse, à l\'aise à l\'oral.'; });
+await test('bilan de fin de cycle : null rétablit le niveau proposé', async () => {
+  const k = (await un(`select id from competences where cycle=3 and code='D1.4'`)).id;
+  await as('dir', `select saisir_bilan_cycle('${linaC}', '[{"competence_id":"${k}","niveau":null}]'::jsonb)`);
+  const d = (await as('dir', `select donnees_bilan_cycle('${cl6}') d`)).res.rows[0].d; const n = d.eleves.find(e => e.id === linaC).niveaux.find(x => x.competence_id === k);
+  return n.retenu === 4 && n.modifie === false; });
+await test('bilan de fin de cycle : un professeur qui n’est pas principal ne lit ni n’écrit ; le principal de la classe oui', async () => {
+  const k = (await un(`select id from competences where cycle=3 and code='D1.4'`)).id;
+  const lu = await as('prof', `select donnees_bilan_cycle('${cl6}') d`); const ec = await as('prof', `select saisir_bilan_cycle('${linaC}', '[{"competence_id":"${k}","niveau":1}]'::jsonb)`);
+  await db.exec(`update classes set prof_principal_id='${U.prof2}' where id='${cl6}'`);
+  const lu2 = await as('prof2', `select donnees_bilan_cycle('${cl6}') d`); const ec2 = await as('prof2', `select saisir_bilan_cycle('${linaC}', '[{"competence_id":"${k}","niveau":2}]'::jsonb, 'Bon cycle.')`);
+  const chk = await un(`select niveau from bilans_cycle where eleve_id='${linaC}'`);
+  return !lu.ok && !ec.ok && lu2.ok && ec2.ok && Number(chk.niveau) === 2; });
+await test('bilan de fin de cycle : refusé pour une classe de 5e, et pour une composante d’un autre cycle', async () => {
+  const a = await as('dir', `select donnees_bilan_cycle('${cl5}') d`); const k4 = (await un(`select id from competences where cycle=4 and code='D1.4'`)).id;
+  const b = await as('dir', `select saisir_bilan_cycle('${linaC}', '[{"competence_id":"${k4}","niveau":2}]'::jsonb)`);
+  const sarah5 = await as('dir', `select saisir_bilan_cycle('${sarah}', '[]'::jsonb, 'Texte')`);
+  return !a.ok && /6e/.test(a.err) && !b.ok && /cycle/.test(b.err) && !sarah5.ok; });
+await test('bilan de fin de cycle : fermé aux visiteurs sans connexion et aux élèves', async () => {
+  const a = await as('anon', `select donnees_bilan_cycle('${cl6}') d`); const t = await as('anon', `select * from bilans_cycle`); const e = await as('eleve', `select * from syntheses_cycle`);
+  return !a.ok && (!t.ok || t.res.rows.length === 0) && (!e.ok || e.res.rows.length === 0); });
 await test('appréciations et bulletins fermés aux visiteurs sans connexion (avant le mode test)', async () => {
   const a = await as('anon', `select * from appreciations`); const b = await as('anon', `select donnees_bulletins('${cl5}', '${T1}')`);
   return (!a.ok || a.res.rows.length === 0) && !b.ok; });
@@ -672,7 +714,7 @@ await test('accès libre : un visiteur voit les élèves et peut lancer le contr
   const a = await as('anon', 'select * from eleves'); const b = await as('anon', `select controler_import_eleves('[{"nom":"A"}]'::jsonb) as r`);
   return a.ok && a.res.rows.length > 0 && b.ok; });
 await test('accès libre : appel, cours fictifs du jour et coffre fonctionnent sans connexion', async () => {
-  const a = await as('anon', 'select dev_creer_cours_du_jour() as n'); const c = await as('anon', 'select id from cours limit 1');
+  const a = await as('anon', 'select dev_creer_cours_du_jour() as n'); const c = await as('anon', `select c.id from cours c join enseignements e on e.id = c.enseignement_id where e.classe_id = '${cl5}' limit 1`);
   const b = await as('anon', `select ouvrir_appel('${c.res?.rows?.[0]?.id}') as n`);
   const d = await as('anon', `select deposer_telephone('${sarah}', 'C1')`);
   const e = await as('anon', `update presences set statut='absent' where cours_id='${c.res?.rows?.[0]?.id}' and eleve_id='${adam}' returning statut`);
@@ -698,6 +740,12 @@ await test('accès libre : appréciations, appréciation générale et bulletin 
   const g = await as('anon', `select saisir_appreciation_generale('${sarah}', '${T2}', 'Mode test', null)`);
   const b = await as('anon', `select donnees_bulletins('${cl5}', '${T2}') b`);
   return a.ok && g.ok && b.ok && b.res.rows[0].b.eleves.length > 0; });
+await test('accès libre : le bilan de fin de cycle est utilisable sans connexion (lecture, niveau, synthèse)', async () => {
+  const k = (await un(`select id from competences where cycle=3 and code='D2'`)).id;
+  const a = await as('anon', `select donnees_bilan_cycle('${cl6}') d`);
+  const b = await as('anon', `select saisir_bilan_cycle('${linaC}', '[{"competence_id":"${k}","niveau":3}]'::jsonb, 'Synthèse libre.')`);
+  const c = await as('anon', `select donnees_bilan_cycle('${cl6}') d`); const l = c.res.rows[0].d.eleves.find(e => e.id === linaC);
+  return a.ok && b.ok && c.ok && l.synthese === 'Synthèse libre.' && l.niveaux.some(n => n.competence_id === k && n.retenu === 3); });
 await test('accès libre : les réglages sont lisibles et modifiables sans connexion (mode test)', async () => {
   const a = await as('anon', `select valeur from parametres where cle='mentions_bulletin'`);
   const b = await as('anon', `update parametres set valeur='17' where cle='note_seuil_haut' returning cle`);
