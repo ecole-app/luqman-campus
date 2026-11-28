@@ -1,7 +1,7 @@
 // Tests des écrans : l'appli dans Chrome (format téléphone) avec un faux Supabase en mémoire (données fictives).
 // Lancer : npm run test:ecrans  (Chrome requis ; chemin modifiable avec la variable CHROME).
 import puppeteer from 'puppeteer-core';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, mkdirSync, copyFileSync } from 'fs';
 import { createServer } from 'http';
 import { join, extname } from 'path';
 import { tmpdir } from 'os';
@@ -461,6 +461,17 @@ await page.screenshot({ path: CAP('7-conseil-classe.png') });
 const premier = await page.evaluate(() => { const l = __LC.C.data.eleves; const e = l.find((x, i) => x.rang && i < l.length - 1) || l[0]; return { ...e, i: l.indexOf(e) }; });
 await page.$eval(`[data-cel="${premier.id}"]`, b => b.click()); await w(600);
 ok('conseil : choisir un élève le projette (nom, moyenne, matières, appréciation générale)', await page.evaluate(p => { const t = document.querySelector('.pj-mini').innerText; return __DB.conseils[0].vue === 'eleve' && __DB.conseils[0].eleve_id === p.id && t.includes(p.prenom) && /Résultats par matière/i.test(t) && /Appréciation générale/i.test(t) && new RegExp('Élève ' + (p.i + 1) + ' /', 'i').test(t); }, premier));
+ok('conseil : sans photo, initiales à la place', await page.evaluate(p => { const d = document.querySelector('.pj-mini .pj-photo'); return d && d.tagName === 'DIV' && d.textContent === (p.prenom[0] + p.nom[0]).toUpperCase(); }, premier));
+await (await page.$('#c-photo')).uploadFile(join(RACINE, 'app/icon-192.png')); await w(1200);
+ok('conseil : photo ajoutée (réduite en JPEG), affichée au pilotage et sur l’écran projeté', await page.evaluate(p => { const f = __DB.photos_eleves.find(x => x.eleve_id === p.id);
+  return f && /^data:image\/jpeg;base64,/.test(f.image) && f.image.length < 200000 && document.querySelector('.pj-mini img.pj-photo') && document.querySelector('img.cs-photo') && !!__DB.conseils[0].options.photos; }, premier));
+{ const lotDir = join(tmpdir(), 'lc-photos'); mkdirSync(lotDir, { recursive: true }); const autre = await page.evaluate(p => __LC.C.data.eleves.find(e => e.id !== p.id), premier);
+  const f1 = join(lotDir, `${autre.nom.toUpperCase()}_${autre.prenom}.png`), f2 = join(lotDir, 'inconnu_personne.png');
+  copyFileSync(join(RACINE, 'app/icon-192.png'), f1); copyFileSync(join(RACINE, 'app/icon-192.png'), f2);
+  await (await page.$('#c-photos-lot')).uploadFile(f1, f2); await w(1500);
+  ok('conseil : import des photos en lot reconnu par le nom de fichier, fichier inconnu signalé', await page.evaluate(a => __DB.photos_eleves.some(x => x.eleve_id === a.id) && /1 photo enregistrée/.test(document.querySelector('#vue').innerText) && /inconnu_personne\.png/.test(document.querySelector('#vue').innerText), autre)); }
+await clic('#c-photo-retirer'); await w(500);
+ok('conseil : photo retirée', await page.evaluate(p => !__DB.photos_eleves.some(x => x.eleve_id === p.id) && document.querySelector('.pj-mini .pj-photo').tagName === 'DIV', premier));
 ok('conseil : rang masqué par défaut, absences affichées', await page.evaluate(() => { const t = document.querySelector('.pj-mini').innerText; return !/Rang :/.test(t) && /Absences :/.test(t); }));
 await page.evaluate(p => { __LC.C.data.eleves.find(e => e.id === p.id).rang = 2; }, premier);
 await page.$eval('[data-copt="rang"]', c => c.click()); await w(500);
@@ -497,9 +508,10 @@ const errProj = []; proj.on('pageerror', e => errProj.push(e.message));
 await proj.setRequestInterception(true);
 proj.on('request', r => { const u = r.url(); if (u.includes('vendor/supabase-')) return r.respond({ status: 200, contentType: 'application/javascript', body: MOCK }); if (u.includes('fonts.g')) return r.respond({ status: 200, contentType: 'text/css', body: '' }); r.continue(); });
 await proj.evaluateOnNewDocument(() => { window.__avantDB = DB => { const c = DB.classes[0], el = DB.eleves.find(e => e.classe_id === c.id);
+  DB.photos_eleves.push({ eleve_id: el.id, image: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==' });
   DB.conseils.push({ id: 'c-test', classe_id: c.id, periode_id: DB.periodes[0].id, statut: 'en_cours', vue: 'eleve', eleve_id: el.id, options: { rang: false, absences: true, appreciations: true }, revision: 1, debut: new Date().toISOString(), fin: null }); }; });
 await proj.goto(BASE + '?projection=c-test', { waitUntil: 'networkidle0' }); await w(800);
-ok('écran projeté : plein écran sans menu, affiche l’élève projeté', await proj.evaluate(() => document.body.classList.contains('lc-proj') && getComputedStyle(document.querySelector('#nav')).display === 'none' && document.querySelector('.pj-ecran').innerText.includes(__DB.eleves.find(e => e.id === __DB.conseils[0].eleve_id).prenom)));
+ok('écran projeté : plein écran sans menu, affiche l’élève projeté avec sa photo', await proj.evaluate(() => !!document.querySelector('.pj-ecran img.pj-photo') && document.body.classList.contains('lc-proj') && getComputedStyle(document.querySelector('#nav')).display === 'none' && document.querySelector('.pj-ecran').innerText.includes(__DB.eleves.find(e => e.id === __DB.conseils[0].eleve_id).prenom)));
 await proj.screenshot({ path: CAP('8-ecran-projete.png') });
 await proj.evaluate(() => { const c = __DB.conseils[0]; c.vue = 'classe'; c.revision++; }); await w(5000);
 ok('écran projeté : suit le pilotage (relecture toutes les 4 s sans temps réel)', await proj.evaluate(() => /Vue d’ensemble/i.test(document.querySelector('.pj-ecran').innerText)));

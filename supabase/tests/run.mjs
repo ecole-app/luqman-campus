@@ -26,6 +26,7 @@ await db.exec(readFileSync(new URL('../migrations/0011_phrases_correction_profs.
 await db.exec(readFileSync(new URL('../migrations/0012_bulletins_mise_en_page_suivi_historique.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0013_bilan_fin_de_cycle.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0014_conseil_de_classe.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../migrations/0015_photos_eleves.sql', import.meta.url), 'utf8'));
 
 const U = { gest:'00000000-0000-0000-0000-000000000001', dir:'00000000-0000-0000-0000-000000000002',
   prof:'00000000-0000-0000-0000-000000000003', eleve:'00000000-0000-0000-0000-000000000004',
@@ -683,6 +684,22 @@ await test('bilan de fin de cycle : refusé pour une classe de 5e, et pour une c
 await test('bilan de fin de cycle : fermé aux visiteurs sans connexion et aux élèves', async () => {
   const a = await as('anon', `select donnees_bilan_cycle('${cl6}') d`); const t = await as('anon', `select * from bilans_cycle`); const e = await as('eleve', `select * from syntheses_cycle`);
   return !a.ok && (!t.ok || t.res.rows.length === 0) && (!e.ok || e.res.rows.length === 0); });
+const IMG = 'data:image/jpeg;base64,/9j/4AAQSkZJRg==';
+await test('photo : la direction ajoute, remplace et retire la photo d’un élève', async () => {
+  const a = await as('dir', `insert into photos_eleves(eleve_id, image) values ('${sarah}', '${IMG}') returning eleve_id`);
+  const b = await as('dir', `update photos_eleves set image='${IMG}AA' where eleve_id='${sarah}' returning eleve_id`);
+  const c = await as('dir', `delete from photos_eleves where eleve_id='${adam}' returning eleve_id`);
+  return a.ok && b.ok && b.res.rows.length === 1 && c.ok; });
+await test('photo : lue par le personnel (professeur, vie scolaire) ; ni par un élève, ni sans connexion', async () => {
+  const p = await as('prof', `select eleve_id from photos_eleves`); const v = await as('vs2', `select eleve_id from photos_eleves`);
+  const e = await as('eleve', `select * from photos_eleves`); const n = await as('anon', `select * from photos_eleves`);
+  return p.res.rows.length === 1 && v.res.rows.length === 1 && (!e.ok || e.res.rows.length === 0) && (!n.ok || n.res.rows.length === 0); });
+await test('photo : un professeur ne l’ajoute ni ne la modifie ; format et taille contrôlés', async () => {
+  const a = await as('prof', `insert into photos_eleves(eleve_id, image) values ('${adam}', '${IMG}')`);
+  const b = await as('prof', `update photos_eleves set image='${IMG}' where eleve_id='${sarah}' returning eleve_id`);
+  const c = await as('dir', `insert into photos_eleves(eleve_id, image) values ('${adam}', 'http://exemple.fr/photo.jpg')`);
+  const d = await as('dir', `insert into photos_eleves(eleve_id, image) values ('${adam}', '${IMG}' || repeat('A', 200000))`);
+  return !a.ok && (!b.ok || b.res.rows.length === 0) && !c.ok && !d.ok; });
 // ---------- Étape 5 : conseil de classe ----------
 let conseil5;
 await test('conseil : le professeur principal ouvre le conseil ; le rouvrir rend le même conseil', async () => {
@@ -799,6 +816,9 @@ await test('accès libre : le conseil de classe est utilisable sans connexion (o
   const c = await as('anon', `select noter_conseil_eleve('${id}', '${adam}', true, null, 'Mode test')`);
   const d = await as('anon', `select c.vue, ce.remarque from conseils c join conseil_eleves ce on ce.conseil_id = c.id where c.id='${id}'`);
   return a.ok && b.ok && c.ok && d.ok && d.res.rows[0].vue === 'eleve' && d.res.rows[0].remarque === 'Mode test'; });
+await test('accès libre : photo d’élève ajoutée et lue sans connexion (mode test)', async () => {
+  const a = await as('anon', `insert into photos_eleves(eleve_id, image) values ('${adam}', '${IMG}') on conflict (eleve_id) do update set image = excluded.image returning eleve_id`);
+  const b = await as('anon', `select eleve_id from photos_eleves`); return a.ok && b.res.rows.length >= 1; });
 await test('accès libre : les réglages sont lisibles et modifiables sans connexion (mode test)', async () => {
   const a = await as('anon', `select valeur from parametres where cle='mentions_bulletin'`);
   const b = await as('anon', `update parametres set valeur='17' where cle='note_seuil_haut' returning cle`);
@@ -807,6 +827,7 @@ await test('accès libre : les réglages sont lisibles et modifiables sans conne
 await db.exec(lire('retirer_acces_libre.sql'));
 await test('après le retrait : réglages fermés sans connexion', async () => { const r = await as('anon', 'select * from parametres'); return !r.ok || r.res.rows.length === 0; });
 await test('après le retrait : plus de conseil de classe sans connexion', async () => {
+  const p = await as('anon', 'select * from photos_eleves'); if (p.ok && p.res.rows.length) return 'photos encore visibles';
   const a = await as('anon', 'select * from conseils'); const b = await as('anon', `select ouvrir_conseil('${cl5}', '${T1}')`);
   return (!a.ok || a.res.rows.length === 0) && !b.ok; });
 await test('après le retrait : plus de notes ni de moyennes sans connexion, et les droits par rôle reviennent', async () => {

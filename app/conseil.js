@@ -9,7 +9,7 @@
   const O = window.LCVS.notesOutils, N = O.N, { fmt, opt } = O;
   const BO = () => window.LCVS.bulletinsOutils;
   const PROJ = new URLSearchParams(location.search).get('projection');
-  const C = { classeId: '', periodeId: '', conseil: null, suivi: {}, data: null, prev: null, err: '', tempsReel: false, canal: null, sondage: null, etat: '', minuteurA: null };
+  const C = { photos: {}, photosVer: null, classeId: '', periodeId: '', conseil: null, suivi: {}, data: null, prev: null, err: '', tempsReel: false, canal: null, sondage: null, etat: '', minuteurA: null };
   window.__LC.C = C;
   const bc = 'BroadcastChannel' in window ? new BroadcastChannel('lc-conseil') : null;
 
@@ -35,7 +35,7 @@
     .pj .pj-kpi span { display:block; font-size:14px; color:#a9c4be; text-transform:uppercase; letter-spacing:.05em; } .pj .pj-kpi b { font-size:40px; font-weight:700; }
     .pj .haut { color:#F5C542; } .pj .bas { color:#ff6b5f; }
     .pj .pj-barres { display:flex; flex-direction:column; gap:10px; }
-    .pj .pj-ligne { display:grid; grid-template-columns:200px 1fr 64px; gap:14px; align-items:center; font-size:18px; }
+    .pj .pj-ligne { display:grid; grid-template-columns:240px 1fr 64px; gap:14px; align-items:center; font-size:18px; }
     .pj .pj-ligne .nom { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .pj .pj-ligne .val { text-align:right; font-weight:700; font-size:20px; }
     .pj .pj-piste { position:relative; height:16px; background:rgba(255,255,255,.08); border-radius:8px; }
     .pj .pj-piste .plage { position:absolute; top:0; bottom:0; background:rgba(212,160,23,.18); border-radius:8px; }
@@ -58,6 +58,10 @@
     .pj .pj-logo { width:110px; height:110px; margin:0 auto 10px; border-radius:26px; border:3px solid #D4A017; display:flex; align-items:center; justify-content:center; font-family:'Playfair Display',serif; font-size:52px; color:#D4A017; font-weight:700; }
     .pj .pj-chips { display:flex; flex-wrap:wrap; gap:8px; } .pj .pj-chips span { background:rgba(255,255,255,.1); border-radius:999px; padding:6px 14px; font-size:17px; }
     .pj .pj-pied { font-size:13px; color:#7fa49c; display:flex; justify-content:space-between; }
+    .pj .pj-ident { display:flex; gap:18px; align-items:center; }
+    .pj .pj-photo { width:120px; height:150px; flex:none; border-radius:16px; object-fit:cover; border:3px solid #D4A017; background:#0d3a34; display:flex; align-items:center; justify-content:center; font-family:'Playfair Display',serif; font-size:44px; color:#D4A017; }
+    .cs-photo { width:72px; height:90px; border-radius:10px; object-fit:cover; border:2px solid var(--or); background:#eee7d6; display:flex; align-items:center; justify-content:center; font-weight:700; color:var(--vert); flex:none; }
+    .cs-fichier { position:relative; overflow:hidden; } .cs-fichier input { position:absolute; inset:0; opacity:0; cursor:pointer; }
     .pj-plein { position:fixed; right:16px; bottom:16px; z-index:20; opacity:.75; }
     .pj-erreur { color:#f4efe2; font-family:'DM Sans',sans-serif; text-align:center; padding:40px; font-size:20px; max-width:700px; }
     .cs-pilote { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:14px; } @media (max-width:860px) { .cs-pilote { grid-template-columns:1fr; } }
@@ -82,6 +86,28 @@
   const eleveCourant = () => eleves().find(e => e.id === (C.conseil && C.conseil.eleve_id)) || null;
   const moyPrev = id => { const e = C.prev && C.prev.eleves.find(x => x.id === id); return e ? n(e.moyenne) : null; };
   const duree = () => { if (!C.conseil) return ''; const f = C.conseil.fin ? new Date(C.conseil.fin) : new Date(); const m = Math.max(0, Math.round((f - new Date(C.conseil.debut)) / 60000)); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`; };
+  const initiales = e => ((e.prenom || '').charAt(0) + (e.nom || '').charAt(0)).toUpperCase();
+  const photo = (e, classe) => C.photos[e.id] ? `<img class="${classe}" src="${C.photos[e.id]}" alt="Photo de ${esc(nomEl(e))}">` : `<div class="${classe}">${esc(initiales(e))}</div>`;
+  async function chargerPhotos() {
+    C.photos = {}; const ids = eleves().map(e => e.id); if (!ids.length) return;
+    const r = await sb.from('photos_eleves').select('eleve_id,image').in('eleve_id', ids);
+    if (!r.error) (r.data || []).forEach(x => { C.photos[x.eleve_id] = x.image; });
+    C.photosVer = (C.conseil && C.conseil.options && C.conseil.options.photos) || null;
+  }
+  // Photo réduite dans l'appli (recadrée 4:5, 300 × 375 px, JPEG) : légère à stocker et à projeter.
+  async function compresser(fichier) {
+    if (!/^image\//.test(fichier.type)) throw new Error(fichier.name + ' : ce n’est pas une image.');
+    const url = URL.createObjectURL(fichier);
+    try {
+      const img = await new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ko(new Error(fichier.name + ' : image illisible.')); i.src = url; });
+      const L = 300, Hh = 375, r = L / Hh, sw = img.width / img.height > r ? img.height * r : img.width, sh = img.width / img.height > r ? img.height : img.width / r;
+      const cv = document.createElement('canvas'); cv.width = L; cv.height = Hh;
+      cv.getContext('2d').drawImage(img, (img.width - sw) / 2, (img.height - sh) / 3, sw, sh, 0, 0, L, Hh);
+      let q = 0.85, d = cv.toDataURL('image/jpeg', q); while (d.length > 190000 && q > 0.4) { q -= 0.1; d = cv.toDataURL('image/jpeg', q); }
+      return d;
+    } finally { URL.revokeObjectURL(url); }
+  }
+  const sansAccent = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z]/g, '');
   const estAvert = m => /avertissement/i.test(m || '');
   const ajusterEchelle = () => document.querySelectorAll('.pj-cadre').forEach(c => { const p = c.querySelector('.pj'); if (!p) return; const k = Math.min(c.clientWidth / H, c.clientHeight / V) || 0.3;
     p.style.transform = `scale(${k})`; p.style.left = Math.max(0, (c.clientWidth - H * k) / 2) + 'px'; p.style.top = Math.max(0, (c.clientHeight - V * k) / 2) + 'px'; });
@@ -115,8 +141,8 @@
           <span class="val ${cls(v)}">${v != null ? fmt(v) : '—'}</span>${o.appreciations && r.appreciation ? `<div class="appr">${esc(r.appreciation)}</div>` : ''}</div>`; }).join('');
       return `<div class="pj">${ent('Élève ' + i + ' / ' + els.length)}<div class="pj-scene" style="grid-template-columns:380px 1fr">
         <div class="pj-carte" style="display:flex;flex-direction:column">
-          <h1 style="font-size:44px">${esc(e.prenom)}<br>${esc(e.nom)}</h1>
-          <div class="pj-moy"><b class="${cls(m)}">${m != null ? fmt(m) : '—'}</b><span>moyenne générale</span></div>
+          <div class="pj-ident">${photo(e, 'pj-photo')}<h1 style="font-size:40px">${esc(e.prenom)}<br>${esc(e.nom)}</h1></div>
+          <div class="pj-moy" style="width:160px;height:160px"><b class="${cls(m)}">${m != null ? fmt(m) : '—'}</b><span>moyenne générale</span></div>
           ${m != null && m0 != null && Math.abs(m - m0) >= 0.1 ? `<div class="pj-info"><b class="${m > m0 ? 'haut' : 'bas'}">${m > m0 ? '▲ +' : '▼ '}${fmt(Math.round((m - m0) * 100) / 100)}</b> depuis la période précédente</div>` : ''}
           <div class="pj-info">Moyenne de la classe : <b>${f(n(D.moyenne_classe))}</b></div>
           ${o.rang && e.rang ? `<div class="pj-info">Rang : <b>${e.rang}</b> sur ${els.length}</div>` : ''}
@@ -148,7 +174,8 @@
   function recevoir(row) {
     if (!row || !C.conseil || row.id !== C.conseil.id) return;
     if (row.revision === C.conseil.revision && row.vue === C.conseil.vue && row.eleve_id === C.conseil.eleve_id) return;
-    C.conseil = row; refaire();
+    C.conseil = row;
+    if (((row.options || {}).photos || null) !== C.photosVer) chargerPhotos().then(refaire); else refaire();
     clearTimeout(minuteurD); minuteurD = setTimeout(rafraichirDonnees, 300);
   }
   async function rafraichirDonnees() {
@@ -178,6 +205,7 @@
     if (!r.data) { C.err = 'Conseil introuvable. Vérifie le lien, et que cet appareil est connecté avec le compte de la direction ou du professeur principal.'; return; }
     C.conseil = r.data;
     try { const d = await BO().preparer(r.data.classe_id, r.data.periode_id); C.data = d.data; C.prev = d.prev; } catch (e) { C.err = String(e.message || e); return; }
+    await chargerPhotos();
     ecouter();
   }
   async function chargerConseil() {
@@ -188,6 +216,7 @@
     try { const d = await BO().preparer(C.classeId || B.classeId, C.periodeId || B.periodeId); C.data = d.data; C.prev = d.prev; }
     catch (e) { C.classeId = B.classeId; C.periodeId = B.periodeId; if (/réseau/.test(e.message)) throw e; C.err = peutAnimer() ? String(e.message || e) : 'Le conseil est animé par la direction ou le professeur principal de la classe.'; return; }
     C.classeId = B.classeId; C.periodeId = B.periodeId;
+    await chargerPhotos();
     const r = await sb.from('conseils').select('*').eq('classe_id', C.classeId).eq('periode_id', C.periodeId).maybeSingle();
     if (r.error) { C.err = /conseils|relation/.test(r.error.message) ? 'Le conseil de classe n’est pas encore installé (migration 0014).' : r.error.message; return; }
     C.conseil = r.data || null;
@@ -218,7 +247,8 @@
     const fige = !N.droits.admin && C.data.statut !== 'ouvert';
     const panneauEleve = e ? (() => { const s = C.suivi[e.id] || {}, prop = BO().mentionProposee(e), i = els.indexOf(e);
       return `<div class="carte"><div class="barre" style="justify-content:space-between"><button class="b sec" id="c-prec" ${i <= 0 ? 'disabled' : ''}>◀</button>
-          <strong style="font-size:17px">${esc(nomEl(e))}</strong><button class="b sec" id="c-suiv" ${i >= els.length - 1 ? 'disabled' : ''}>▶</button></div>
+          <span style="display:flex;gap:10px;align-items:center">${photo(e, 'cs-photo')}<strong style="font-size:17px">${esc(nomEl(e))}</strong></span><button class="b sec" id="c-suiv" ${i >= els.length - 1 ? 'disabled' : ''}>▶</button></div>
+        ${N.droits.admin ? `<div class="barre"><span class="b sec cs-fichier">📷 ${C.photos[e.id] ? 'Changer la photo' : 'Ajouter une photo'}<input type="file" accept="image/*" id="c-photo"></span>${C.photos[e.id] ? '<button class="b sec" id="c-photo-retirer">Retirer la photo</button>' : ''}</div>` : ''}
         ${fige ? '<div class="msg info">Bulletins validés : seule la direction peut encore modifier l’appréciation générale et la mention.</div>' : ''}
         <label class="petit">Mention ${prop ? `<span class="doux">(proposée : ${esc(prop)})</span>` : ''}</label>
         <select id="c-mention" ${fige ? 'disabled' : ''}>${opt('', '— aucune —', !e.mention)}${BO().B.mentions.map(m => opt(m, m, m === e.mention)).join('')}</select>
@@ -232,6 +262,8 @@
       : `<div class="carte"><p class="doux">Choisis un élève pour l’afficher sur l’écran projeté (ou utilise les flèches ← → du clavier).</p></div>`;
     return `${msg()}<div class="carte"><h2>Conseil de classe</h2>${sel}
       <p class="petit">${vus} / ${els.length} élèves vus · moyenne de la classe ${f(n(C.data.moyenne_classe))}</p>
+      ${N.droits.admin ? `<div class="barre"><span class="b sec cs-fichier">📷 Importer les photos de la classe<input type="file" accept="image/*" multiple id="c-photos-lot"></span>
+        <span class="petit doux">${Object.keys(C.photos).length} / ${els.length} photos · fichiers nommés « NOM_Prénom.jpg »</span></div>` : ''}
       <div class="cs-vues">${vues.map(([k, l]) => `<button data-cvue="${k}" class="${cs.vue === k ? 'on' : ''}">${l}</button>`).join('')}</div>
       <div class="cs-eleves">${els.map(x => { const s = C.suivi[x.id] || {};
         return `<button data-cel="${x.id}" class="${cs.vue === 'eleve' && cs.eleve_id === x.id ? 'on' : ''} ${s.traite ? 'vu' : ''}">${s.traite ? '✓ ' : ''}${s.a_revoir ? '⚑ ' : ''}${esc(x.prenom)} ${esc(x.nom.charAt(0))}.${x.mention ? ` <span class="m">${esc(x.mention.split(' ')[0])}</span>` : ''}</button>`; }).join('')}</div></div>
@@ -318,6 +350,25 @@
     document.querySelectorAll('[data-copt]').forEach(c => c.onchange = async () => { if (await piloter({ options: { [c.dataset.copt]: c.checked } })) refaire(); });
     $('#c-projeter').onclick = () => { const w = window.open(lienProjection(), 'lc-projection'); if (!w) { dire('info', 'Fenêtre bloquée par le navigateur : copie le lien et ouvre-le sur l’autre écran.'); refaire(); } };
     $('#c-copier').onclick = async () => { const i = $('#c-lien'); try { await navigator.clipboard.writeText(i.value); dire('ok', 'Lien de l’écran projeté copié.'); } catch (e) { i.select(); dire('info', 'Sélectionne le lien et copie-le.'); } refaire(); };
+    const signalerPhotos = async () => { await piloter({ options: { photos: String(Date.now()) } }); C.photosVer = C.conseil.options.photos; };
+    const ph = $('#c-photo'); if (ph) ph.onchange = async () => {
+      const e = eleveCourant(), f = ph.files[0]; if (!f) return;
+      try { const d = await compresser(f); const r = await sb.from('photos_eleves').upsert({ eleve_id: e.id, image: d });
+        if (r.error) throw new Error(estReseau(r.error) ? 'Pas de connexion : photo non enregistrée.' : r.error.message);
+        C.photos[e.id] = d; await signalerPhotos(); dire('ok', 'Photo enregistrée.'); } catch (x) { dire('err', String(x.message || x)); }
+      refaire(); };
+    const phr = $('#c-photo-retirer'); if (phr) phr.onclick = async () => { const e = eleveCourant(); const r = await sb.from('photos_eleves').delete().eq('eleve_id', e.id);
+      if (r.error) dire('err', r.error.message); else { delete C.photos[e.id]; await signalerPhotos(); dire('ok', 'Photo retirée.'); } refaire(); };
+    const lot = $('#c-photos-lot'); if (lot) lot.onchange = async () => {
+      const fichiers = [...lot.files], ok = [], refus = [];
+      for (const f of fichiers) { const base = sansAccent(f.name.replace(/\.[^.]+$/, ''));
+        const e = eleves().find(x => base === sansAccent(x.nom + x.prenom) || base === sansAccent(x.prenom + x.nom));
+        if (!e) { refus.push(f.name); continue; }
+        try { const d = await compresser(f); const r = await sb.from('photos_eleves').upsert({ eleve_id: e.id, image: d }); if (r.error) throw new Error(r.error.message); C.photos[e.id] = d; ok.push(e); }
+        catch (x) { refus.push(f.name); } }
+      if (ok.length) await signalerPhotos();
+      dire(refus.length ? 'info' : 'ok', `${ok.length} photo${ok.length > 1 ? 's' : ''} enregistrée${ok.length > 1 ? 's' : ''}.` + (refus.length ? ` Non reconnues (nom de fichier ≠ NOM_Prénom) : ${refus.join(', ')}.` : ''));
+      refaire(); };
     const pr = $('#c-prec'); if (pr) pr.onclick = () => deplacer(-1);
     const su = $('#c-suiv'); if (su) su.onclick = () => deplacer(1);
     const gen = $('#c-gen'); if (gen) { gen.oninput = () => { C.etat = ''; const et = $('#c-etat'); if (et) et.textContent = ''; clearTimeout(C.minuteurA); C.minuteurA = setTimeout(enregistrerGenerale, 1200); }; gen.onchange = enregistrerGenerale; }

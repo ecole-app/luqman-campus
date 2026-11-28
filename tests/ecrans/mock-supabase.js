@@ -5,7 +5,7 @@
   const auj = new Date(); const j = auj.toISOString().slice(0, 10);
   const at = (h, m) => { const d = new Date(); d.setHours(h, m, 0, 0); return d.toISOString(); };
   const DB = { classes: [], eleves: [], matieres: [], enseignements: [], annees_scolaires: [], periodes: [], cours: [], appels: [], presences: [], observations: [], punitions: [],
-    coffre_telephone: [], corrections_presence: [], absences_prevues: [], seances_retenue: [], incidents: [], incident_eleves: [], passages_infirmerie: [], fermetures: [], groupes: [], groupe_eleves: [], modeles_evaluation: [], appreciations: [], elements_programme: [], appreciations_generales: [], bulletins_periode: [], banque_phrases: [], conseils: [], conseil_eleves: [] };
+    coffre_telephone: [], corrections_presence: [], absences_prevues: [], seances_retenue: [], incidents: [], incident_eleves: [], passages_infirmerie: [], fermetures: [], groupes: [], groupe_eleves: [], modeles_evaluation: [], appreciations: [], elements_programme: [], appreciations_generales: [], bulletins_periode: [], banque_phrases: [], conseils: [], conseil_eleves: [], photos_eleves: [] };
   const an = { id: uid(), libelle: '2026-2027', active: true }; DB.annees_scolaires.push(an);
   DB.periodes.push({ id: uid(), annee_id: an.id, numero: 1, libelle: 'Trimestre 1', debut: '2026-09-01', fin: '2026-11-30' }, { id: uid(), annee_id: an.id, numero: 2, libelle: 'Trimestre 2', debut: '2026-12-01', fin: '2027-03-15' });
   ['5e A', '6e A'].forEach(n => DB.classes.push({ id: uid(), annee_id: an.id, niveau: n.slice(0, 2), nom: n }));
@@ -59,6 +59,7 @@
     limit(n) { this.lim = n; return this; }
     maybeSingle() { this.single = true; return this; }
     insert(rows) { this.op = 'insert'; this.rows = [].concat(rows); return this; }
+    upsert(rows) { const T = DB[this.t]; [].concat(rows).forEach(r => { const k = 'eleve_id' in r && this.t === 'photos_eleves' ? 'eleve_id' : 'id'; const i = T.findIndex(x => x[k] === r[k]); if (i >= 0) T.splice(i, 1); }); return this.insert(rows); }
     update(v) { this.op = 'update'; this.vals = v; return this; }
     delete() { this.op = 'delete'; return this; }
     run() {

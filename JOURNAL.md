@@ -144,3 +144,9 @@ Demande d'Ahmed : aller au bout de l'étape 2 pour ne pas y revenir. Tout fait s
 - Tests : `test:db` 177/177, `test:ecrans` 150/150. Cache `lc-app-v14`, `bulletins.js?v=7`, `conseil.js?v=1`.
 - **Pour installer** : appliquer `0014` dans l'éditeur SQL, relancer `acces_libre.sql` en entier.
 - Points pour le directeur : 21 à 23.
+
+## 2026-11-28 — Étape 5 : photo de l'élève au conseil de classe
+- Demande d'Ahmed. Migration `0015_photos_eleves.sql` : table `photos_eleves` (image réduite dans l'appli, 300 × 375 px JPEG, 200 Ko au plus, en texte), lue par le personnel, ajoutée / changée / retirée par la direction ; pas de copie dans le journal d'audit (trop lourd).
+- Conseil de classe : photo (ou initiales) à côté du nom sur l'écran projeté et au pilotage ; 📷 Ajouter / Changer / Retirer la photo ; 📷 Importer les photos de la classe en lot (fichiers reconnus par leur nom « NOM_Prénom », sans accents ni majuscules ; fichiers non reconnus signalés). L'écran projeté recharge les photos dès qu'elles changent.
+- Tests : `test:db` 181/181, `test:ecrans` 154/154. Cache `lc-app-v15`, `conseil.js?v=2`.
+- **Pour installer** : appliquer `0015` dans l'éditeur SQL, relancer `acces_libre.sql` en entier. Point 24 pour le directeur (droit à l'image).

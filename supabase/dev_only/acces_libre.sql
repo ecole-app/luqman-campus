@@ -92,5 +92,8 @@ grant select on public.conseils, public.conseil_eleves to anon;
 grant execute on function public.peut_animer_conseil(uuid), public.ouvrir_conseil(uuid, uuid), public.piloter_conseil(uuid, jsonb),
   public.noter_conseil_eleve(uuid, uuid, boolean, boolean, text) to anon;
 
+-- Photos des élèves (fictives uniquement)
+grant select, insert, update, delete on public.photos_eleves to anon;
+
 -- ---- Réglages lisibles et modifiables en mode test (couleurs des notes, mentions, en-tête des bulletins…) ----
 grant select, update on public.parametres to anon;
