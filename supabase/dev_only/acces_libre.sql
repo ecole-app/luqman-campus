@@ -95,5 +95,10 @@ grant execute on function public.peut_animer_conseil(uuid), public.ouvrir_consei
 -- Photos des élèves (fictives uniquement)
 grant select, insert, update, delete on public.photos_eleves to anon;
 
+-- ---- Étape 6 : emploi du temps ----
+grant select, insert, update, delete on public.salles, public.creneaux, public.edt_regles, public.edt_versions, public.edt_seances to anon;
+grant execute on function public.edt_donnees(uuid), public.controler_edt(uuid), public.enregistrer_edt(uuid, text, jsonb, jsonb),
+  public.modifier_seance(uuid, uuid, uuid, boolean, boolean), public.publier_edt(uuid, date, date) to anon;
+
 -- ---- Réglages lisibles et modifiables en mode test (couleurs des notes, mentions, en-tête des bulletins…) ----
 grant select, update on public.parametres to anon;
