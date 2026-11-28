@@ -682,6 +682,11 @@
     };
   }
 
+  // ---------- Outils partagés avec le conseil de classe (étape 5) ----------
+  // preparer : charge réglages, données de la période et de la période précédente (pour les propositions et les évolutions).
+  async function preparer(classeId, periodeId) { if (classeId) B.classeId = classeId; if (periodeId) B.periodeId = periodeId; await chargerCommun(); await chargerDonnees(); return { data: B.data, prev: B.prev }; }
+  window.LCVS.bulletinsOutils = { B, preparer, proposerGenerale, mentionProposee, imprimer, telechargerPdf, htmlEleve: (d, e) => htmlEleve(d, e) };
+
   // ---------- Branchement ----------
   insererOnglet('appreciations', 'Appréciations', 'competences');
   insererOnglet('bulletins', 'Bulletins', 'appreciations');

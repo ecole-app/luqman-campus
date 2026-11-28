@@ -25,6 +25,7 @@ await db.exec(readFileSync(new URL('../migrations/0010_appreciations_bulletins.s
 await db.exec(readFileSync(new URL('../migrations/0011_phrases_correction_profs.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0012_bulletins_mise_en_page_suivi_historique.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../migrations/0013_bilan_fin_de_cycle.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../migrations/0014_conseil_de_classe.sql', import.meta.url), 'utf8'));
 
 const U = { gest:'00000000-0000-0000-0000-000000000001', dir:'00000000-0000-0000-0000-000000000002',
   prof:'00000000-0000-0000-0000-000000000003', eleve:'00000000-0000-0000-0000-000000000004',
@@ -682,6 +683,52 @@ await test('bilan de fin de cycle : refusé pour une classe de 5e, et pour une c
 await test('bilan de fin de cycle : fermé aux visiteurs sans connexion et aux élèves', async () => {
   const a = await as('anon', `select donnees_bilan_cycle('${cl6}') d`); const t = await as('anon', `select * from bilans_cycle`); const e = await as('eleve', `select * from syntheses_cycle`);
   return !a.ok && (!t.ok || t.res.rows.length === 0) && (!e.ok || e.res.rows.length === 0); });
+// ---------- Étape 5 : conseil de classe ----------
+let conseil5;
+await test('conseil : le professeur principal ouvre le conseil ; le rouvrir rend le même conseil', async () => {
+  const a = await as('prof2', `select ouvrir_conseil('${cl5}', '${T1}') id`); const b = await as('prof2', `select ouvrir_conseil('${cl5}', '${T1}') id`);
+  conseil5 = a.res?.rows?.[0]?.id; const c = await un(`select statut, vue, revision from conseils where id='${conseil5}'`);
+  return a.ok && b.ok && b.res.rows[0].id === conseil5 && c.statut === 'en_cours' && c.vue === 'classe' && c.revision === 0; });
+await test('conseil : un professeur qui n’est pas principal, la vie scolaire et un élève ne l’ouvrent pas', async () => {
+  const a = await as('prof', `select ouvrir_conseil('${cl5}', '${T1}')`); const b = await as('vs2', `select ouvrir_conseil('${cl5}', '${T1}')`); const c = await as('eleve', `select ouvrir_conseil('${cl5}', '${T1}')`);
+  return !a.ok && /principal/.test(a.err) && !b.ok && !c.ok; });
+await test('conseil : piloter change la vue, l’élève projeté et les options, et augmente la révision', async () => {
+  const r = await as('prof2', `select piloter_conseil('${conseil5}', '{"vue":"eleve","eleve_id":"${sarah}","options":{"rang":true}}'::jsonb) c`); const c = r.res?.rows?.[0]?.c;
+  return r.ok && c.vue === 'eleve' && c.eleve_id === sarah && c.options.rang === true && c.options.absences === true && c.revision === 1; });
+await test('conseil : refus d’un élève d’une autre classe, d’une vue inconnue, et du pilotage par un professeur simple', async () => {
+  const a = await as('prof2', `select piloter_conseil('${conseil5}', '{"eleve_id":"${lina}"}'::jsonb)`);
+  const b = await as('prof2', `select piloter_conseil('${conseil5}', '{"vue":"n_importe"}'::jsonb)`);
+  const c = await as('prof', `select piloter_conseil('${conseil5}', '{"vue":"classe"}'::jsonb)`);
+  return !a.ok && /pas dans la classe/.test(a.err) && !b.ok && !c.ok; });
+await test('conseil : suivi d’un élève (traité, à revoir, remarque interne) ; null laisse inchangé, vide efface', async () => {
+  const a = await as('prof2', `select noter_conseil_eleve('${conseil5}', '${sarah}', true, true, 'Rencontre avec la famille à prévoir.')`);
+  const b = await as('prof2', `select noter_conseil_eleve('${conseil5}', '${sarah}', null, false, null)`);
+  const x = await un(`select traite, a_revoir, remarque from conseil_eleves where conseil_id='${conseil5}' and eleve_id='${sarah}'`);
+  const c = await as('prof2', `select noter_conseil_eleve('${conseil5}', '${sarah}', null, null, '')`);
+  const y = await un(`select remarque from conseil_eleves where conseil_id='${conseil5}' and eleve_id='${sarah}'`);
+  const d = await as('prof2', `select noter_conseil_eleve('${conseil5}', '${lina}', true, null, null)`);
+  const e = await as('prof2', `select noter_conseil_eleve('${conseil5}', '${sarah}', null, null, '${'x'.repeat(1001)}')`);
+  return a.ok && b.ok && x.traite === true && x.a_revoir === false && x.remarque === 'Rencontre avec la famille à prévoir.' && c.ok && y.remarque === null && !d.ok && !e.ok; });
+await test('conseil : lu par le principal et la direction ; ni par un professeur simple, ni par la vie scolaire, ni par un élève', async () => {
+  const pp = await as('prof2', `select * from conseils`); const di = await as('dir', `select * from conseil_eleves`);
+  const p = await as('prof', `select * from conseils`); const v = await as('vs2', `select * from conseil_eleves`); const e = await as('eleve', `select * from conseils`);
+  const w = await as('prof2', `update conseils set vue='accueil' where id='${conseil5}' returning id`);
+  return pp.res.rows.length === 1 && di.res.rows.length === 1 && p.res.rows.length === 0 && v.res.rows.length === 0 && (!e.ok || e.res.rows.length === 0) && (!w.ok || w.res.rows.length === 0); });
+await test('conseil : la direction termine le conseil (heure de fin), puis le rouvre', async () => {
+  const a = await as('dir', `select piloter_conseil('${conseil5}', '{"statut":"termine","vue":"synthese"}'::jsonb) c`);
+  const b = await as('dir', `select piloter_conseil('${conseil5}', '{"statut":"en_cours"}'::jsonb) c`);
+  return a.ok && a.res.rows[0].c.statut === 'termine' && a.res.rows[0].c.fin && b.res.rows[0].c.fin === null && b.res.rows[0].c.statut === 'en_cours'; });
+await test('conseil : une période d’une autre année est refusée ; chaque action est dans le journal', async () => {
+  await db.exec(`insert into annees_scolaires(libelle, debut, fin) values ('2099-2100', '2099-09-01', '2100-07-05');
+    insert into periodes(annee_id, numero, libelle, debut, fin) select id, 1, 'T1 futur', '2099-09-01', '2099-11-30' from annees_scolaires where libelle='2099-2100'`);
+  const pf = (await un(`select id from periodes where libelle='T1 futur'`)).id;
+  const a = await as('dir', `select ouvrir_conseil('${cl5}', '${pf}')`);
+  await db.exec(`delete from periodes where id='${pf}'; delete from annees_scolaires where libelle='2099-2100'`);
+  const j = await un(`select count(*)::int n from journal_audit where table_nom in ('conseils','conseil_eleves')`);
+  return !a.ok && /période/.test(a.err) && j.n >= 4; });
+await test('conseil : fermé aux visiteurs sans connexion (avant le mode test)', async () => {
+  const a = await as('anon', `select ouvrir_conseil('${cl5}', '${T1}')`); const b = await as('anon', `select * from conseils`);
+  return !a.ok && (!b.ok || b.res.rows.length === 0); });
 await test('appréciations et bulletins fermés aux visiteurs sans connexion (avant le mode test)', async () => {
   const a = await as('anon', `select * from appreciations`); const b = await as('anon', `select donnees_bulletins('${cl5}', '${T1}')`);
   return (!a.ok || a.res.rows.length === 0) && !b.ok; });
@@ -746,6 +793,12 @@ await test('accès libre : le bilan de fin de cycle est utilisable sans connexio
   const b = await as('anon', `select saisir_bilan_cycle('${linaC}', '[{"competence_id":"${k}","niveau":3}]'::jsonb, 'Synthèse libre.')`);
   const c = await as('anon', `select donnees_bilan_cycle('${cl6}') d`); const l = c.res.rows[0].d.eleves.find(e => e.id === linaC);
   return a.ok && b.ok && c.ok && l.synthese === 'Synthèse libre.' && l.niveaux.some(n => n.competence_id === k && n.retenu === 3); });
+await test('accès libre : le conseil de classe est utilisable sans connexion (ouvrir, piloter, suivi, lecture)', async () => {
+  const a = await as('anon', `select ouvrir_conseil('${cl5}', '${T2}') id`); const id = a.res?.rows?.[0]?.id;
+  const b = await as('anon', `select piloter_conseil('${id}', '{"vue":"eleve","eleve_id":"${adam}"}'::jsonb) c`);
+  const c = await as('anon', `select noter_conseil_eleve('${id}', '${adam}', true, null, 'Mode test')`);
+  const d = await as('anon', `select c.vue, ce.remarque from conseils c join conseil_eleves ce on ce.conseil_id = c.id where c.id='${id}'`);
+  return a.ok && b.ok && c.ok && d.ok && d.res.rows[0].vue === 'eleve' && d.res.rows[0].remarque === 'Mode test'; });
 await test('accès libre : les réglages sont lisibles et modifiables sans connexion (mode test)', async () => {
   const a = await as('anon', `select valeur from parametres where cle='mentions_bulletin'`);
   const b = await as('anon', `update parametres set valeur='17' where cle='note_seuil_haut' returning cle`);
@@ -753,6 +806,9 @@ await test('accès libre : les réglages sont lisibles et modifiables sans conne
   return a.ok && Array.isArray(a.res.rows[0].valeur) && b.ok && b.res.rows.length === 1; });
 await db.exec(lire('retirer_acces_libre.sql'));
 await test('après le retrait : réglages fermés sans connexion', async () => { const r = await as('anon', 'select * from parametres'); return !r.ok || r.res.rows.length === 0; });
+await test('après le retrait : plus de conseil de classe sans connexion', async () => {
+  const a = await as('anon', 'select * from conseils'); const b = await as('anon', `select ouvrir_conseil('${cl5}', '${T1}')`);
+  return (!a.ok || a.res.rows.length === 0) && !b.ok; });
 await test('après le retrait : plus de notes ni de moyennes sans connexion, et les droits par rôle reviennent', async () => {
   const a = await as('anon', 'select * from notes'); const b = await as('anon', `select * from moyennes_generales('${cl5}', null)`);
   const c = await as('anon', `insert into evaluations(enseignement_id, titre, date_eval) values ('${ensEps}', 'Intrus', '2026-11-12')`);

@@ -80,6 +80,9 @@ revoke all on public.appreciations, public.elements_programme, public.appreciati
 -- ---- Étape 4 (compléments) : bilan de fin de cycle ----
 revoke execute on function public.saisir_bilan_cycle(uuid, jsonb, text), public.donnees_bilan_cycle(uuid) from anon;
 revoke all on public.bilans_cycle, public.syntheses_cycle from anon;
+revoke execute on function public.peut_animer_conseil(uuid), public.ouvrir_conseil(uuid, uuid), public.piloter_conseil(uuid, jsonb),
+  public.noter_conseil_eleve(uuid, uuid, boolean, boolean, text) from anon;
+revoke all on public.conseils, public.conseil_eleves from anon;
 
 -- ---- Réglages ----
 revoke select, update on public.parametres from anon;

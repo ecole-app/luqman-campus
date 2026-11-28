@@ -136,3 +136,11 @@ Demande d'Ahmed : aller au bout de l'étape 2 pour ne pas y revenir. Tout fait s
 - **IA** : décision d'Ahmed, on ne branche pas d'IA externe (les propositions par règles suffisent). Voir point 15 de la liste du directeur.
 - Tests : `test:db` 166/166, `test:ecrans` 130/130. Cache `lc-app-v13`, `bulletins.js?v=6`.
 - **Pour installer** : appliquer `0013` dans l'éditeur SQL, relancer `acces_libre.sql` en entier.
+
+## 2026-11-28 — Étape 5 : conseil de classe (mode deux écrans)
+- Migration `0014_conseil_de_classe.sql` : tables `conseils` (classe × période : statut, vue projetée, élève projeté, options, révision, début/fin) et `conseil_eleves` (vu, à revoir, remarque interne), fonctions `ouvrir_conseil`, `piloter_conseil`, `noter_conseil_eleve`, `peut_animer_conseil` (direction ou professeur principal), lecture par qui voit toute la classe, journal d'audit, tables ajoutées à la publication `supabase_realtime`.
+- Écran **Conseil de classe** (`app/conseil.js`) : ouverture du conseil, vues projetées Accueil / Vue de la classe (moyennes par matière avec plage min–max, répartition des moyennes, absences, aucun nom) / Élève (moyenne, évolution, rang en option, absences, mention, résultats par matière avec moyenne de la classe, appréciations, appréciation générale) / Synthèse (mentions avec noms) ; aperçu en direct de l'écran projeté ; mention et appréciation générale saisies pendant le conseil (💡 Proposer) ; remarque interne et ⚑ à revoir (jamais projetées) ; « ✓ Vu · élève suivant », flèches ← → ; chrono et compteur d'élèves vus ; terminer / rouvrir ; compte rendu interne imprimable et en PDF.
+- **Écran projeté** : lien `app/?projection=<id>` sur un autre appareil (ou bouton 📺), plein écran, scène 16/9 mise à l'échelle. Suit le pilotage par Supabase Realtime, sinon relecture toutes les 4 s ; dans le même navigateur, BroadcastChannel (instantané).
+- Tests : `test:db` 177/177, `test:ecrans` 150/150. Cache `lc-app-v14`, `bulletins.js?v=7`, `conseil.js?v=1`.
+- **Pour installer** : appliquer `0014` dans l'éditeur SQL, relancer `acces_libre.sql` en entier.
+- Points pour le directeur : 21 à 23.

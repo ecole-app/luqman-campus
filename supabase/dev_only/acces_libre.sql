@@ -87,5 +87,10 @@ grant execute on function public.saisir_appreciations(uuid, uuid, jsonb), public
 grant select, insert, update, delete on public.bilans_cycle, public.syntheses_cycle to anon;
 grant execute on function public.saisir_bilan_cycle(uuid, jsonb, text), public.donnees_bilan_cycle(uuid) to anon;
 
+-- ---- Étape 5 : conseil de classe ----
+grant select on public.conseils, public.conseil_eleves to anon;
+grant execute on function public.peut_animer_conseil(uuid), public.ouvrir_conseil(uuid, uuid), public.piloter_conseil(uuid, jsonb),
+  public.noter_conseil_eleve(uuid, uuid, boolean, boolean, text) to anon;
+
 -- ---- Réglages lisibles et modifiables en mode test (couleurs des notes, mentions, en-tête des bulletins…) ----
 grant select, update on public.parametres to anon;
