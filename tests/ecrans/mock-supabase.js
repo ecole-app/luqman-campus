@@ -5,7 +5,7 @@
   const auj = new Date(); const j = auj.toISOString().slice(0, 10);
   const at = (h, m) => { const d = new Date(); d.setHours(h, m, 0, 0); return d.toISOString(); };
   const DB = { classes: [], eleves: [], matieres: [], enseignements: [], annees_scolaires: [], periodes: [], cours: [], appels: [], presences: [], observations: [], punitions: [],
-    coffre_telephone: [], corrections_presence: [], absences_prevues: [], seances_retenue: [], incidents: [], incident_eleves: [], passages_infirmerie: [], fermetures: [], groupes: [], groupe_eleves: [], modeles_evaluation: [], appreciations: [], elements_programme: [], appreciations_generales: [], bulletins_periode: [], banque_phrases: [] };
+    coffre_telephone: [], corrections_presence: [], absences_prevues: [], seances_retenue: [], incidents: [], incident_eleves: [], passages_infirmerie: [], fermetures: [], groupes: [], groupe_eleves: [], modeles_evaluation: [], appreciations: [], elements_programme: [], appreciations_generales: [], bulletins_periode: [], banque_phrases: [], conseils: [], conseil_eleves: [] };
   const an = { id: uid(), libelle: '2026-2027', active: true }; DB.annees_scolaires.push(an);
   DB.periodes.push({ id: uid(), annee_id: an.id, numero: 1, libelle: 'Trimestre 1', debut: '2026-09-01', fin: '2026-11-30' }, { id: uid(), annee_id: an.id, numero: 2, libelle: 'Trimestre 2', debut: '2026-12-01', fin: '2027-03-15' });
   ['5e A', '6e A'].forEach(n => DB.classes.push({ id: uid(), annee_id: an.id, niveau: n.slice(0, 2), nom: n }));
@@ -22,6 +22,7 @@
   const HOOKS = { competences: o => { if (o.actif === undefined) o.actif = true; return o; }, evaluations: o => { const p = DB.periodes.find(x => o.date_eval >= x.debut && o.date_eval <= x.fin); if (!p) throw new Error('Aucune période ne couvre cette date'); o.periode_id = p.id; return o; } };
   const HOOK_ = (t, o) => HOOKS[t] ? HOOKS[t](o) : o;
   window.__DB = DB; window.__appels_rpc = [];
+  if (typeof window.__avantDB === 'function') window.__avantDB(DB);
 
   const FK = { cours: 'cours_id', enseignements: 'enseignement_id', incidents: 'incident_id', annees_scolaires: 'annee_id' };
   function parseEmb(sel) {
@@ -189,6 +190,21 @@
       const gm = gen.map(x => x.moyenne);
       return { etablissement: { nom: 'Collège Luqmân', adresse: 'Saint-Étienne' }, classe: { id: cl.id, nom: cl.nom, niveau: cl.niveau, prof_principal: null }, periode: { id: per.id, libelle: per.libelle, debut: per.debut, fin: per.fin, annee: '2026-2027' },
         statut: (DB.bulletins_periode.find(b => b.classe_id === p_classe && b.periode_id === p_periode) || {}).statut || 'ouvert', afficher_rang: true, moyenne_classe: gm.length ? r2(gm.reduce((a, b) => a + b, 0) / gm.length) : null, enseignements: ens, eleves }; },
+    ouvrir_conseil({ p_classe, p_periode }) {
+      if (DB.__droits && !DB.__droits.admin && !(DB.__droits.classes_pp || []).includes(p_classe)) throw new Error('Le conseil de classe est animé par la direction ou le professeur principal.');
+      let c = DB.conseils.find(x => x.classe_id === p_classe && x.periode_id === p_periode);
+      if (!c) { c = { id: uid(), classe_id: p_classe, periode_id: p_periode, statut: 'en_cours', vue: 'classe', eleve_id: null, options: { rang: false, absences: true, appreciations: true }, revision: 0, debut: now(), fin: null, updated_at: now() }; DB.conseils.push(c); }
+      return c.id; },
+    piloter_conseil({ p_conseil, p_changements }) {
+      const c = DB.conseils.find(x => x.id === p_conseil); if (!c) throw new Error('Conseil introuvable'); const j = p_changements || {};
+      if ('eleve_id' in j) { if (j.eleve_id && !DB.eleves.some(e => e.id === j.eleve_id && e.classe_id === c.classe_id)) throw new Error('Cet élève n\'est pas dans la classe.'); c.eleve_id = j.eleve_id || null; }
+      if (j.vue) c.vue = j.vue; if (j.options) c.options = { ...c.options, ...j.options }; if (j.statut) { c.statut = j.statut; c.fin = j.statut === 'termine' ? now() : null; }
+      c.revision++; c.updated_at = now(); return { ...c }; },
+    noter_conseil_eleve({ p_conseil, p_eleve, p_traite, p_a_revoir, p_remarque }) {
+      let s = DB.conseil_eleves.find(x => x.conseil_id === p_conseil && x.eleve_id === p_eleve);
+      if (!s) { s = { conseil_id: p_conseil, eleve_id: p_eleve, traite: false, a_revoir: false, remarque: null }; DB.conseil_eleves.push(s); }
+      if (p_traite != null) s.traite = p_traite; if (p_a_revoir != null) s.a_revoir = p_a_revoir; if (p_remarque != null) s.remarque = p_remarque.trim() || null;
+      DB.conseils.find(x => x.id === p_conseil).revision++; return null; },
     mes_droits_notes() { return DB.__droits || { admin: true, classes_pp: [], enseignements: [] }; },
     saisir_notes({ p_eval, p_lignes }) {
       const ev = DB.evaluations.find(e => e.id === p_eval); const per = DB.periodes.find(p => p.id === ev.periode_id);

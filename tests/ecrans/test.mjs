@@ -35,7 +35,7 @@ const onglet = async k => { await clic(`#nav [data-k="${k}"]`); await w(300); };
 await page.goto(BASE, { waitUntil: 'networkidle0' });
 await w(500);
 const onglets = await page.$$eval('#nav button', b => b.map(x => x.dataset.k));
-ok('tous les onglets sont là', ['appel', 'suivi', 'fiche', 'pun', 'incidents', 'tel', 'infirmerie', 'tdb', 'eleves', 'classes', 'groupes', 'calendrier', 'notes', 'competences', 'appreciations', 'bulletins'].every(k => onglets.includes(k)), onglets.join(','));
+ok('tous les onglets sont là', ['appel', 'suivi', 'fiche', 'pun', 'incidents', 'tel', 'infirmerie', 'tdb', 'eleves', 'classes', 'groupes', 'calendrier', 'notes', 'competences', 'appreciations', 'bulletins', 'conseil'].every(k => onglets.includes(k)), onglets.join(','));
 
 // --- Appel en ligne ---
 await clic('#v-fictifs'); await w(300);
@@ -449,6 +449,64 @@ await page.$$eval('[data-vue="evals"]', b => b[0] && b[0].click()); await w(400)
 await clic('[data-suppr]'); ok('suppression : première touche demande confirmation', /Confirmer la suppression/.test(await texte()));
 await clic('[data-suppr]'); await w(300);
 ok('évaluation supprimée après confirmation', /Aucune évaluation/.test(await texte()) && (await page.evaluate(() => __DB.evaluations.length)) === 0);
+
+// --- Étape 5 : conseil de classe (pilotage + écran projeté) ---
+await page.evaluate(c => { Object.assign(__LC.C, { classeId: c.classe, periodeId: c.per }); window.__imp = 0; window.print = () => { window.__imp++; window.__crTxt = document.querySelector('#lc-impression').innerText; }; }, ctx4);
+await onglet('conseil'); await w(700);
+ok('conseil : avant ouverture, résumé de la classe et bouton « Ouvrir »', await page.evaluate(() => !!document.querySelector('#c-ouvrir') && /élèves · moyenne de la classe/.test(document.querySelector('#vue').innerText)));
+await clic('#c-ouvrir'); await w(600);
+ok('conseil : ouvert, l’écran projeté (aperçu) montre la vue de la classe sans nom d’élève', await page.evaluate(() => __DB.conseils.length === 1 && /Vue d’ensemble/i.test(document.querySelector('.pj-mini').innerText) && /Répartition des moyennes/i.test(document.querySelector('.pj-mini').innerText) && !__DB.eleves.some(e => document.querySelector('.pj-mini').innerText.includes(e.nom + '\n'))));
+ok('conseil : l’aperçu est mis à l’échelle dans son cadre', await page.evaluate(() => { const p = document.querySelector('.pj-mini .pj'); return /scale\(0\.\d+\)/.test(p.style.transform); }));
+await page.screenshot({ path: CAP('7-conseil-classe.png') });
+const premier = await page.evaluate(() => { const l = __LC.C.data.eleves; const e = l.find((x, i) => x.rang && i < l.length - 1) || l[0]; return { ...e, i: l.indexOf(e) }; });
+await page.$eval(`[data-cel="${premier.id}"]`, b => b.click()); await w(600);
+ok('conseil : choisir un élève le projette (nom, moyenne, matières, appréciation générale)', await page.evaluate(p => { const t = document.querySelector('.pj-mini').innerText; return __DB.conseils[0].vue === 'eleve' && __DB.conseils[0].eleve_id === p.id && t.includes(p.prenom) && /Résultats par matière/i.test(t) && /Appréciation générale/i.test(t) && new RegExp('Élève ' + (p.i + 1) + ' /', 'i').test(t); }, premier));
+ok('conseil : rang masqué par défaut, absences affichées', await page.evaluate(() => { const t = document.querySelector('.pj-mini').innerText; return !/Rang :/.test(t) && /Absences :/.test(t); }));
+await page.evaluate(p => { __LC.C.data.eleves.find(e => e.id === p.id).rang = 2; }, premier);
+await page.$eval('[data-copt="rang"]', c => c.click()); await w(500);
+ok('conseil : l’option « Afficher le rang » est enregistrée et projetée', await page.evaluate(() => __DB.conseils[0].options.rang === true && /Rang :/.test(document.querySelector('.pj-mini').innerText)), await page.evaluate(p => JSON.stringify([__DB.conseils[0].options, p.rang, p.moyenne, document.querySelector('.pj-mini').innerText.slice(0, 400)]), premier));
+await page.$eval('#c-gen', t => { t.value = 'Un trimestre sérieux, à poursuivre.'; t.dispatchEvent(new Event('change')); }); await w(500);
+await page.select('#c-mention', 'Encouragements'); await w(500);
+ok('conseil : appréciation générale et mention enregistrées et projetées', await page.evaluate(p => { const a = __DB.appreciations_generales.find(x => x.eleve_id === p.id); const t = document.querySelector('.pj-mini').innerText;
+  return a && a.texte === 'Un trimestre sérieux, à poursuivre.' && a.mention === 'Encouragements' && t.includes('Un trimestre sérieux') && t.includes('Encouragements'); }, premier));
+await page.$eval('#c-rem', t => { t.value = 'Prévoir un rendez-vous avec la famille.'; t.dispatchEvent(new Event('change')); }); await w(400);
+await page.$eval('#c-revoir', c => c.click()); await w(400);
+ok('conseil : remarque interne et « à revoir » enregistrées, jamais sur l’écran projeté', await page.evaluate(p => { const s = __DB.conseil_eleves.find(x => x.eleve_id === p.id); return s && s.a_revoir === true && s.remarque === 'Prévoir un rendez-vous avec la famille.' && !/rendez-vous/.test(document.querySelector('.pj-mini').innerText); }, premier));
+await clic('#c-vu'); await w(700);
+ok('conseil : « Vu · élève suivant » marque l’élève et passe au suivant', await page.evaluate(p => __DB.conseil_eleves.find(x => x.eleve_id === p.id).traite === true && __DB.conseils[0].eleve_id === __LC.C.data.eleves[p.i + 1].id && /1 \/ \d+ élèves vus/.test(document.querySelector('#vue').innerText), premier));
+await page.evaluate(() => document.activeElement && document.activeElement.blur()); await page.keyboard.press('ArrowLeft'); await w(700);
+ok('conseil : flèche ← du clavier revient à l’élève précédent', await page.evaluate(p => __DB.conseils[0].eleve_id === p.id, premier));
+await page.$eval('[data-cvue="synthese"]', b => b.click()); await w(500);
+ok('conseil : la synthèse projette les mentions avec les noms', await page.evaluate(p => { const t = document.querySelector('.pj-mini').innerText; return /Synthèse du conseil/i.test(t) && /Encouragements · 1/i.test(t) && t.includes(p.prenom); }, premier));
+await clic('#c-terminer'); await w(500);
+ok('conseil : terminé (statut, message, bouton Rouvrir)', await page.evaluate(() => __DB.conseils[0].statut === 'termine' && !!document.querySelector('#c-rouvrir') && /Conseil terminé/.test(document.querySelector('#vue').innerText)));
+await clic('#c-cr-imp'); await w(300);
+ok('conseil : compte rendu imprimable (mention, à revoir, remarque, mention « document interne »)', await page.evaluate(() => window.__imp === 1 && /Compte rendu du conseil de classe/.test(window.__crTxt) && /Prévoir un rendez-vous/.test(window.__crTxt) && /Encouragements/.test(window.__crTxt) && /Document interne/i.test(window.__crTxt)));
+await page.evaluate(() => { __LC.C.conseil && (__LC.C.data.eleves.length); }); await clic('#c-cr-pdf'); await w(5000);
+ok('conseil : PDF du compte rendu téléchargé', await page.evaluate(() => /PDF prêt : Conseil_/.test(document.querySelector('#vue').innerText)), await page.evaluate(() => document.querySelector('#vue').innerText.slice(0, 200)));
+await clic('#c-rouvrir'); await w(400);
+ok('conseil : rouvert', await page.evaluate(() => __DB.conseils[0].statut === 'en_cours' && !!document.querySelector('#c-terminer')));
+await page.evaluate(c => { __DB.__droits = { admin: false, classes_pp: [], enseignements: [c.ens] }; __LC.N.pret = false; }, ctx4);
+await onglet('appel'); await onglet('conseil'); await w(700);
+ok('rôle prof : le conseil est réservé à la direction et au professeur principal', await page.evaluate(() => !document.querySelector('#c-ouvrir') && !document.querySelector('[data-cel]') && /animé par la direction ou le professeur principal/.test(document.querySelector('#vue').innerText)));
+await page.evaluate(() => { __DB.__droits = null; __LC.N.pret = false; });
+await onglet('appel');
+// Écran projeté sur un autre appareil (même faux serveur préparé avant le chargement)
+const proj = await browser.newPage(); await proj.setViewport({ width: 1280, height: 720 }); await proj.setBypassServiceWorker(true);
+const errProj = []; proj.on('pageerror', e => errProj.push(e.message));
+await proj.setRequestInterception(true);
+proj.on('request', r => { const u = r.url(); if (u.includes('vendor/supabase-')) return r.respond({ status: 200, contentType: 'application/javascript', body: MOCK }); if (u.includes('fonts.g')) return r.respond({ status: 200, contentType: 'text/css', body: '' }); r.continue(); });
+await proj.evaluateOnNewDocument(() => { window.__avantDB = DB => { const c = DB.classes[0], el = DB.eleves.find(e => e.classe_id === c.id);
+  DB.conseils.push({ id: 'c-test', classe_id: c.id, periode_id: DB.periodes[0].id, statut: 'en_cours', vue: 'eleve', eleve_id: el.id, options: { rang: false, absences: true, appreciations: true }, revision: 1, debut: new Date().toISOString(), fin: null }); }; });
+await proj.goto(BASE + '?projection=c-test', { waitUntil: 'networkidle0' }); await w(800);
+ok('écran projeté : plein écran sans menu, affiche l’élève projeté', await proj.evaluate(() => document.body.classList.contains('lc-proj') && getComputedStyle(document.querySelector('#nav')).display === 'none' && document.querySelector('.pj-ecran').innerText.includes(__DB.eleves.find(e => e.id === __DB.conseils[0].eleve_id).prenom)));
+await proj.screenshot({ path: CAP('8-ecran-projete.png') });
+await proj.evaluate(() => { const c = __DB.conseils[0]; c.vue = 'classe'; c.revision++; }); await w(5000);
+ok('écran projeté : suit le pilotage (relecture toutes les 4 s sans temps réel)', await proj.evaluate(() => /Vue d’ensemble/i.test(document.querySelector('.pj-ecran').innerText)));
+await proj.goto(BASE + '?projection=inconnu', { waitUntil: 'networkidle0' }); await w(600);
+ok('écran projeté : lien inconnu → message clair', await proj.evaluate(() => /Conseil introuvable/.test(document.body.innerText)));
+ok('écran projeté : aucune erreur JavaScript', errProj.length === 0, errProj.join(' | '));
+await proj.close();
 
 for (const k of ['eleves', 'classes', 'matieres', 'import', 'export', 'fiche']) { await onglet(k); }
 ok('aucune erreur JavaScript', erreurs.length === 0, erreurs.join(' | '));
